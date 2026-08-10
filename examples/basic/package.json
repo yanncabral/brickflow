@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "bun build ./src/index.ts --outdir ./dist --target bun --format esm --external @flow/*",
+    "start": "bun run src/index.ts",
     "test": "bun test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
