@@ -1,0 +1,22 @@
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "fronterior.biome-monorepo",
+  "[typescript]": {
+    "editor.defaultFormatter": "fronterior.biome-monorepo"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "fronterior.biome-monorepo"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "fronterior.biome-monorepo"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "fronterior.biome-monorepo"
+  },
+  "files.eol": "\n",
+  "editor.tabSize": 2,
+  "editor.codeActionsOnSave": {
+    "source.organizeImports.biome": "explicit",
+    "source.fixAll.biome": "explicit"
+  }
+}

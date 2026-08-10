@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/engine-local" },
+    { "path": "./packages/engine-openworkflow" },
+    { "path": "./packages/testing" },
+    { "path": "./examples/basic" },
+    { "path": "./examples/code-agent" }
+  ]
+}

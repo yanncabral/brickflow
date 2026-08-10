@@ -1,0 +1,15 @@
+{
+  "name": "@flow-example/basic",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --target bun --format esm --external @flow/*",
+    "test": "bun test",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@flow/core": "workspace:*",
+    "@flow/engine-local": "workspace:*"
+  }
+}
