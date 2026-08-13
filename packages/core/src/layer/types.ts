@@ -1,4 +1,5 @@
-import type { FlowImplementation, FlowSpec, RequirementsOf } from '../flow/types'
+import type { Flow } from '../flow/contract'
+import type { DependenciesOf, FlowImplementation, RequirementsOf } from '../flow/types'
 
 export type Providers = Readonly<Record<string, unknown>>
 export interface AnyLayer {
@@ -20,7 +21,7 @@ export type RequirementConflict<Key extends PropertyKey, Left = unknown, Right =
 }
 
 type EntryRequirements<Entry> =
-  Entry extends FlowImplementation<infer Spec extends FlowSpec>
+  Entry extends FlowImplementation<infer Spec extends Flow>
     ? RequirementsOf<Spec>
     : Entry extends { readonly entries: infer Entries extends LayerEntries }
       ? RequirementsFromEntries<Entries>
@@ -70,6 +71,90 @@ type RequirementsFromEntries<Entries extends LayerEntries> = {
   >
 }
 
+type FlowOfEntry<Entry> = Entry extends FlowImplementation<infer F extends Flow> ? F : never
+
+type DirectFlowEntryForAlias<
+  Entries extends LayerEntries,
+  Alias extends PropertyKey
+> = Alias extends keyof Entries
+  ? Entries[Alias] extends FlowImplementation<infer _F extends Flow>
+    ? Entries[Alias]
+    : never
+  : never
+
+type FlattenedFlowEntryForAlias<
+  Entries extends LayerEntries,
+  Alias extends PropertyKey,
+  Path extends readonly PropertyKey[] = readonly []
+> = {
+  [Key in keyof Entries]: Entries[Key] extends FlowImplementation<infer _F extends Flow>
+    ? Key extends Alias
+      ? {
+          readonly path: readonly [...Path, Key]
+          readonly implementation: Entries[Key]
+        }
+      : never
+    : Entries[Key] extends { readonly entries: infer Nested extends LayerEntries }
+      ? FlattenedFlowEntryForAlias<Nested, Alias, readonly [...Path, Key]>
+      : never
+}[keyof Entries]
+
+type IsUnion<Value, Whole = Value> = Value extends Value
+  ? [Whole] extends [Value]
+    ? false
+    : true
+  : never
+
+type UniqueGlobalFlowEntryForAlias<
+  RootEntries extends LayerEntries,
+  Alias extends PropertyKey,
+  Match = FlattenedFlowEntryForAlias<RootEntries, Alias>
+> = [Match] extends [never]
+  ? never
+  : true extends IsUnion<Match>
+    ? never
+    : Match extends { readonly implementation: infer Entry }
+      ? Entry
+      : never
+
+type ResolvedFlowEntry<
+  RootEntries extends LayerEntries,
+  ScopeEntries extends LayerEntries,
+  Alias extends PropertyKey,
+  Direct = DirectFlowEntryForAlias<ScopeEntries, Alias>
+> = [Direct] extends [never] ? UniqueGlobalFlowEntryForAlias<RootEntries, Alias> : Direct
+
+type HasIncompatibleDependencyAlias<
+  RootEntries extends LayerEntries,
+  ScopeEntries extends LayerEntries,
+  F extends Flow
+> = true extends {
+  readonly [Alias in keyof DependenciesOf<F>]: [
+    ResolvedFlowEntry<RootEntries, ScopeEntries, Alias>
+  ] extends [never]
+    ? false
+    : FlowOfEntry<
+          ResolvedFlowEntry<RootEntries, ScopeEntries, Alias>
+        > extends DependenciesOf<F>[Alias]
+      ? false
+      : true
+}[keyof DependenciesOf<F>]
+  ? true
+  : false
+
+type ValidateDependencyAliases<
+  RootEntries extends LayerEntries,
+  Entries extends LayerEntries = RootEntries
+> = {
+  readonly [Key in keyof Entries]: Entries[Key] extends FlowImplementation<infer F extends Flow>
+    ? HasIncompatibleDependencyAlias<RootEntries, Entries, F> extends true
+      ? never
+      : Entries[Key]
+    : Entries[Key] extends { readonly entries: infer Nested extends LayerEntries }
+      ? Entries[Key] & { readonly entries: ValidateDependencyAliases<RootEntries, Nested> }
+      : Entries[Key]
+}
+
 export interface LayerState<
   Id extends string = string,
   Entries extends LayerEntries = LayerEntries,
@@ -100,7 +185,9 @@ export type Layer<
 export interface LayerConstructor {
   new <const Id extends string, const Entries extends LayerEntries>(
     id: Id,
-    entries: Entries & Record<Extract<keyof Entries, ReservedLayerEntryName>, never>
+    entries: Entries &
+      ValidateDependencyAliases<Entries> &
+      Record<Extract<keyof Entries, ReservedLayerEntryName>, never>
   ): Layer<Id, Entries>
 }
 
@@ -128,6 +215,8 @@ export type LayerUnprovidedRequirementsOf<Value> = Omit<
 
 export interface FlattenedLayerEntry {
   readonly id: string
+  readonly key: string
+  readonly layerPath: readonly string[]
   // biome-ignore lint/suspicious/noExplicitAny: flattened entries retain heterogeneous Flow implementations
   readonly implementation: FlowImplementation<any>
 }

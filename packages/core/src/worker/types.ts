@@ -1,11 +1,10 @@
 import type { Engine } from '../engine/engine'
 import type { EngineStatus } from '../engine/types'
+import type { Flow } from '../flow/contract'
 import type {
   EffectiveErrorsOf,
   EffectiveSignalsOf,
-  FlowContract,
   FlowImplementation,
-  FlowSpec,
   ParamsOf,
   ResultOf,
   SignalsOf
@@ -21,41 +20,38 @@ import type { BoundarySignalHandlers, SignalDefinitions } from '../signal/types'
 
 export interface WorkerOptions<Layer extends AnyLayer = AnyLayer> {
   readonly engine: Engine
-  /** v1 workers require a Layer so roots, providers, and durable IDs are sound. */
+  /** Workers require a Layer so roots, providers, and durable IDs are sound. */
   readonly layer: Layer
 }
 
 export type RunMetadata = Readonly<Record<string, unknown>>
 
-type ContractOf<Implementation> =
-  Implementation extends FlowImplementation<infer S extends FlowSpec> ? FlowContract<S> : never
-
-type ContractsInGraph<S extends FlowSpec, Depth extends readonly unknown[] = []> =
-  | FlowContract<S>
+type DependencyFlows<F extends Flow, Depth extends readonly unknown[] = []> =
+  | F
   | (Depth['length'] extends 16
       ? never
-      : {
-          [Key in keyof S['depends']]: S['depends'][Key] extends FlowContract<
-            infer Dependency extends FlowSpec
-          >
-            ? ContractsInGraph<Dependency, [...Depth, unknown]>
-            : never
-        }[keyof S['depends']])
+      : F extends { readonly depends: infer Dependencies extends object }
+        ? {
+            [Key in keyof Dependencies]: Dependencies[Key] extends Flow
+              ? DependencyFlows<Dependencies[Key], [...Depth, unknown]>
+              : never
+          }[keyof Dependencies]
+        : never)
 
-type GraphImplementations<Entry, S extends FlowSpec> = Entry extends AnyLayer
-  ? GraphImplementations<LayerEntriesOf<Entry>[keyof LayerEntriesOf<Entry>], S>
-  : Entry extends FlowImplementation<infer _EntrySpec extends FlowSpec>
-    ? ContractOf<Entry> extends ContractsInGraph<S>
+type GraphImplementations<Entry, F extends Flow> = Entry extends AnyLayer
+  ? GraphImplementations<LayerEntriesOf<Entry>[keyof LayerEntriesOf<Entry>], F>
+  : Entry extends FlowImplementation<infer EntryFlow extends Flow>
+    ? EntryFlow extends DependencyFlows<F>
       ? Entry
       : never
     : never
 
 type SignalsForImplementation<Implementation> =
-  Implementation extends FlowImplementation<infer S extends FlowSpec>
-    ? SignalsOf<S> extends SignalDefinitions
-      ? keyof SignalsOf<S> extends never
+  Implementation extends FlowImplementation<infer F extends Flow>
+    ? SignalsOf<F> extends SignalDefinitions
+      ? keyof SignalsOf<F> extends never
         ? never
-        : BoundarySignalHandlers<SignalsOf<S>>
+        : BoundarySignalHandlers<SignalsOf<F>>
       : never
     : never
 
@@ -71,24 +67,24 @@ type SignalsForEntries<Entries extends LayerEntries, Included> = {
     : Key]: EntrySignalHandlers<Entries[Key], Included>
 }
 
-type LayerSignalHandlers<Layer extends AnyLayer, S extends FlowSpec> = {
+type LayerSignalHandlers<Layer extends AnyLayer, F extends Flow> = {
   readonly [Id in Layer['id']]: SignalsForEntries<
     LayerEntriesOf<Layer>,
-    GraphImplementations<LayerEntriesOf<Layer>[keyof LayerEntriesOf<Layer>], S>
+    GraphImplementations<LayerEntriesOf<Layer>[keyof LayerEntriesOf<Layer>], F>
   >
 }
 
 type SignalOptions<
   Layer extends AnyLayer,
-  S extends FlowSpec
-> = keyof EffectiveSignalsOf<S> extends never
+  F extends Flow
+> = keyof EffectiveSignalsOf<F> extends never
   ? { readonly signals?: never }
-  : { readonly signals: LayerSignalHandlers<Layer, S> }
+  : { readonly signals: LayerSignalHandlers<Layer, F> }
 
-export type WorkerRunOptions<Layer extends AnyLayer, S extends FlowSpec> = {
+export type WorkerRunOptions<Layer extends AnyLayer, F extends Flow> = {
   readonly id?: string
   readonly metadata?: RunMetadata
-} & SignalOptions<Layer, S>
+} & SignalOptions<Layer, F>
 
 export interface FlowRunControls {
   readonly id: string
@@ -103,7 +99,6 @@ export interface IncompleteFlowRun<
   RemainingError = Error
 > extends FlowRunControls {
   readonly unhandledErrors: RemainingError
-  // Deliberately invalid Promise shape: bare await produces TS1320 until errors are exhausted.
   readonly then: (invalidOnFulfilled: never) => never
   with<const Pattern extends SupportedPattern<RemainingError>, HandlerResult>(
     pattern: Pattern extends readonly unknown[] ? never : Pattern,
@@ -136,13 +131,13 @@ export type FlowRun<Error, InitialSuccess, LocalResult = InitialSuccess, Remaini
 export interface WorkerState<Layer extends AnyLayer = AnyLayer> {
   readonly engine: Engine
   readonly layer: Layer
-  run<S extends FlowSpec>(
-    root: FlowImplementation<S>,
-    params: ParamsOf<S>,
-    ...options: keyof EffectiveSignalsOf<S> extends never
-      ? readonly [options?: WorkerRunOptions<Layer, S>]
-      : readonly [options: WorkerRunOptions<Layer, S>]
-  ): FlowRun<EffectiveErrorsOf<S>, ResultOf<S>>
+  run<F extends Flow>(
+    root: FlowImplementation<F>,
+    params: ParamsOf<F>,
+    ...options: keyof EffectiveSignalsOf<F> extends never
+      ? readonly [options?: WorkerRunOptions<Layer, F>]
+      : readonly [options: WorkerRunOptions<Layer, F>]
+  ): FlowRun<EffectiveErrorsOf<F>, ResultOf<F>>
 }
 
 export interface WorkerConstructor {

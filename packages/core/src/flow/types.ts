@@ -1,32 +1,30 @@
 import type { InternalSignalHandlers, SignalDefinitions, SignalFunctions } from '../signal/types'
+import type { Flow } from './contract'
 
-export interface FlowSpec {
-  params: unknown
-  result: unknown
-  errors: unknown
-  requires: object
-  depends: object
-  signals: object
-}
+type Empty = Record<never, never>
 
-export interface FlowContract<S extends FlowSpec> {
-  readonly prototype: FlowImplementation<S>
-}
+type DeclaredProperty<F, Key extends PropertyKey, Default> =
+  F extends Record<Key, infer Value> ? Value : Default
 
-type DependencyContractConstraint<D extends object> = {
-  readonly [K in keyof D]: D[K] extends FlowContract<infer _DependencySpec> ? D[K] : never
-}
+export type ParamsOf<F extends Flow> = F['params']
+export type ResultOf<F extends Flow> = F['result']
+export type ErrorsOf<F extends Flow> = DeclaredProperty<F, 'errors', never>
+export type RequirementsOf<F extends Flow> =
+  DeclaredProperty<F, 'requires', Empty> extends object
+    ? DeclaredProperty<F, 'requires', Empty>
+    : Empty
+export type DependenciesOf<F extends Flow> =
+  DeclaredProperty<F, 'depends', Empty> extends object
+    ? DeclaredProperty<F, 'depends', Empty>
+    : Empty
+export type SignalsOf<F extends Flow> =
+  DeclaredProperty<F, 'signals', Empty> extends object
+    ? DeclaredProperty<F, 'signals', Empty>
+    : Empty
 
-type ValidateDependencyContracts<S extends FlowSpec> =
-  S['depends'] extends DependencyContractConstraint<S['depends']> ? S : never
+export type FlowOf<Implementation> = Implementation extends FlowImplementation<infer F> ? F : never
 
-export type ParamsOf<S extends FlowSpec> = S['params']
-export type ResultOf<S extends FlowSpec> = S['result']
-export type ErrorsOf<S extends FlowSpec> = S['errors']
-export type RequirementsOf<S extends FlowSpec> = S['requires']
-export type SignalsOf<S extends FlowSpec> = S['signals']
-
-export type SpecOf<C> = C extends { readonly prototype: FlowImplementation<infer S> } ? S : never
+type DependencyFlow<Value> = Value extends Flow ? Value : never
 
 type UnionToIntersection<Value> = (Value extends Value ? (value: Value) => void : never) extends (
   value: infer Intersection
@@ -34,119 +32,85 @@ type UnionToIntersection<Value> = (Value extends Value ? (value: Value) => void 
   ? Intersection
   : never
 
-type EffectiveErrorsFromDependencies<S extends FlowSpec, Depth extends readonly unknown[]> = {
-  [Key in keyof S['depends']]: SpecOf<S['depends'][Key]> extends infer Dependency extends FlowSpec
-    ? EffectiveErrorsOf<Dependency, Depth>
-    : never
-}[keyof S['depends']]
+type EffectiveErrorsFromDependencies<F extends Flow, Depth extends readonly unknown[]> = {
+  [Key in keyof DependenciesOf<F>]: EffectiveErrorsOf<DependencyFlow<DependenciesOf<F>[Key]>, Depth>
+}[keyof DependenciesOf<F>]
 
 type EffectiveRequirementsFromDependencies<
-  S extends FlowSpec,
+  F extends Flow,
   Depth extends readonly unknown[]
 > = UnionToIntersection<
   {
-    [Key in keyof S['depends']]: SpecOf<S['depends'][Key]> extends infer Dependency extends FlowSpec
-      ? EffectiveRequirementsOf<Dependency, Depth>
-      : Record<never, never>
-  }[keyof S['depends']]
+    [Key in keyof DependenciesOf<F>]: EffectiveRequirementsOf<
+      DependencyFlow<DependenciesOf<F>[Key]>,
+      Depth
+    >
+  }[keyof DependenciesOf<F>]
 >
 
 type EffectiveSignalsFromDependencies<
-  S extends FlowSpec,
+  F extends Flow,
   Depth extends readonly unknown[]
 > = UnionToIntersection<
   {
-    [Key in keyof S['depends']]: SpecOf<S['depends'][Key]> extends infer Dependency extends FlowSpec
-      ? EffectiveSignalsOf<Dependency, Depth>
-      : Record<never, never>
-  }[keyof S['depends']]
+    [Key in keyof DependenciesOf<F>]: EffectiveSignalsOf<
+      DependencyFlow<DependenciesOf<F>[Key]>,
+      Depth
+    >
+  }[keyof DependenciesOf<F>]
 >
 
 export type EffectiveErrorsOf<
-  S extends FlowSpec,
+  F extends Flow,
   Depth extends readonly unknown[] = []
 > = Depth['length'] extends 16
-  ? ErrorsOf<S>
-  : ErrorsOf<S> | EffectiveErrorsFromDependencies<S, [...Depth, unknown]>
+  ? ErrorsOf<F>
+  : ErrorsOf<F> | EffectiveErrorsFromDependencies<F, [...Depth, unknown]>
 
 export type EffectiveRequirementsOf<
-  S extends FlowSpec,
+  F extends Flow,
   Depth extends readonly unknown[] = []
-> = RequirementsOf<S> &
+> = RequirementsOf<F> &
   (Depth['length'] extends 16
-    ? Record<never, never>
-    : EffectiveRequirementsFromDependencies<S, [...Depth, unknown]>)
+    ? Empty
+    : EffectiveRequirementsFromDependencies<F, [...Depth, unknown]>)
 
 export type EffectiveSignalsOf<
-  S extends FlowSpec,
+  F extends Flow,
   Depth extends readonly unknown[] = []
-> = SignalsOf<S> &
-  (Depth['length'] extends 16
-    ? Record<never, never>
-    : EffectiveSignalsFromDependencies<S, [...Depth, unknown]>)
+> = SignalsOf<F> &
+  (Depth['length'] extends 16 ? Empty : EffectiveSignalsFromDependencies<F, [...Depth, unknown]>)
 
-type DependencyCallOptions<S extends FlowSpec> =
-  SignalsOf<S> extends SignalDefinitions
-    ? keyof SignalsOf<S> extends never
+type DependencyCallOptions<F extends Flow> =
+  SignalsOf<F> extends SignalDefinitions
+    ? keyof SignalsOf<F> extends never
       ? { readonly signals?: never }
-      : { readonly signals?: InternalSignalHandlers<SignalsOf<S>> }
+      : { readonly signals?: InternalSignalHandlers<SignalsOf<F>> }
     : { readonly signals?: never }
 
-export type DependencyFunctions<S extends FlowSpec> = {
-  readonly [K in keyof S['depends']]: (
-    params: ParamsOf<SpecOf<S['depends'][K]>>,
-    options?: DependencyCallOptions<SpecOf<S['depends'][K]>>
-  ) => Promise<ResultOf<SpecOf<S['depends'][K]>>>
+export type DependencyFunctions<F extends Flow> = {
+  readonly [Key in keyof DependenciesOf<F>]: (
+    params: ParamsOf<DependencyFlow<DependenciesOf<F>[Key]>>,
+    options?: DependencyCallOptions<DependencyFlow<DependenciesOf<F>[Key]>>
+  ) => Promise<ResultOf<DependencyFlow<DependenciesOf<F>[Key]>>>
 }
 
-export interface FlowTools<S extends FlowSpec> {
-  readonly fail: (error: ErrorsOf<S>) => never
-  readonly signals: SignalsOf<S> extends SignalDefinitions ? SignalFunctions<SignalsOf<S>> : never
+export interface FlowTools<F extends Flow> {
+  readonly fail: (error: ErrorsOf<F>) => never
+  readonly signals: SignalsOf<F> extends SignalDefinitions ? SignalFunctions<SignalsOf<F>> : never
 }
 
-export type FlowHandler<S extends FlowSpec> = (
-  params: ParamsOf<S>,
-  requirements: RequirementsOf<S>,
-  dependencies: DependencyFunctions<S>,
-  tools: FlowTools<S>
-) => ResultOf<S> | Promise<ResultOf<S>>
+export type FlowHandler<F extends Flow> = (
+  params: ParamsOf<F>,
+  requirements: RequirementsOf<F>,
+  dependencies: DependencyFunctions<F>,
+  tools: FlowTools<F>
+) => ResultOf<F> | Promise<ResultOf<F>>
 
-type KeyTuples<Keys extends string, All extends string = Keys> = [Keys] extends [never]
-  ? readonly []
-  : Keys extends Keys
-    ? readonly [Keys, ...KeyTuples<Exclude<All, Keys>>]
-    : never
-
-export type FlowOptions<S extends FlowSpec> = {
-  readonly depends: S['depends']
-} & (keyof S['requires'] & string extends infer Keys extends string
-  ? [Keys] extends [never]
-    ? { readonly requires?: readonly [] }
-    : { readonly requires: KeyTuples<Keys> }
-  : never)
-
-type HasNoRequirementsOrDependencies<S extends FlowSpec> = keyof S['requires'] extends never
-  ? keyof S['depends'] extends never
-    ? true
-    : false
-  : false
-
-export type FlowConstructorArgs<S extends FlowSpec> =
-  ValidateDependencyContracts<S> extends never
-    ? never
-    : HasNoRequirementsOrDependencies<S> extends true
-      ?
-          | readonly [handler: FlowHandler<S>]
-          | readonly [options: FlowOptions<S>, handler: FlowHandler<S>]
-      : readonly [options: FlowOptions<S>, handler: FlowHandler<S>]
-
-export interface FlowImplementation<S extends FlowSpec = FlowSpec> {
-  readonly contract: FlowContract<S>
-  readonly depends: S['depends']
-  readonly requires: readonly (keyof S['requires'] & string)[]
-  readonly handler: FlowHandler<S>
+export interface FlowImplementation<F extends Flow = Flow> {
+  readonly handler: FlowHandler<F>
 }
 
-export type FlowExecutionResult<S extends FlowSpec> =
-  | { readonly ok: true; readonly value: ResultOf<S> }
-  | { readonly ok: false; readonly error: ErrorsOf<S> }
+export type FlowExecutionResult<F extends Flow> =
+  | { readonly ok: true; readonly value: ResultOf<F> }
+  | { readonly ok: false; readonly error: ErrorsOf<F> }

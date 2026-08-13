@@ -1,4 +1,4 @@
-import { Flow, Layer, Worker } from '@flow/core'
+import { type Flow, flow, Layer, Worker } from '@flow/core'
 import { LocalEngine } from '@flow/engine-local'
 
 interface User {
@@ -10,52 +10,35 @@ interface UserRepository {
   find(id: string): Promise<User | undefined>
 }
 
-type Empty = Record<never, never>
-
-type GetUserSpec = {
+export interface GetUserFlow extends Flow {
   params: { id: string }
   result: User
   errors: 'user-not-found'
   requires: { userRepository: UserRepository }
-  depends: Empty
-  signals: Empty
 }
 
-export class GetUserFlow extends Flow<GetUserSpec> {}
-
-export const getUser = new GetUserFlow(
-  { depends: {}, requires: ['userRepository'] },
+export const getUser = flow<GetUserFlow>(
   async ({ id }, { userRepository }, _dependencies, { fail }) => {
     const user = await userRepository.find(id)
     return user ?? fail('user-not-found')
   }
 )
 
-type GetGreetingSpec = {
+export interface GetGreetingFlow extends Flow {
   params: { id: string }
   result: { message: string }
-  errors: never
-  requires: Empty
-  depends: { getUser: typeof GetUserFlow }
-  signals: Empty
+  depends: { getUser: GetUserFlow }
 }
 
-export class GetGreetingFlow extends Flow<GetGreetingSpec> {}
+export const getGreeting = flow<GetGreetingFlow>(async ({ id }, _requirements, { getUser }) => {
+  const user = await getUser({ id })
+  return { message: `Hello, ${user.name}!` }
+})
 
-export const getGreeting = new GetGreetingFlow(
-  { depends: { getUser: GetUserFlow } },
-  async ({ id }, _requirements, { getUser }) => {
-    const user = await getUser({ id })
-    return { message: `Hello, ${user.name}!` }
-  }
-)
-
-type ApproveGreetingSpec = {
+export interface ApproveGreetingFlow extends Flow {
   params: { id: string }
   result: { message: string; approved: boolean }
-  errors: never
-  requires: Empty
-  depends: { getGreeting: typeof GetGreetingFlow }
+  depends: { getGreeting: GetGreetingFlow }
   signals: {
     approve: {
       request: { message: string }
@@ -64,10 +47,7 @@ type ApproveGreetingSpec = {
   }
 }
 
-export class ApproveGreetingFlow extends Flow<ApproveGreetingSpec> {}
-
-export const approveGreeting = new ApproveGreetingFlow(
-  { depends: { getGreeting: GetGreetingFlow } },
+export const approveGreeting = flow<ApproveGreetingFlow>(
   async ({ id }, _requirements, { getGreeting }, { signals }) => {
     const greeting = await getGreeting({ id })
     const approval = await signals.approve(greeting)
@@ -126,6 +106,4 @@ export async function runBasicExample(): Promise<BasicExampleOutput> {
   return { success, recovered, approval, approvalRequests }
 }
 
-if (import.meta.main) {
-  console.log(JSON.stringify(await runBasicExample(), null, 2))
-}
+if (import.meta.main) console.log(JSON.stringify(await runBasicExample(), null, 2))

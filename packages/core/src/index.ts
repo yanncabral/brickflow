@@ -10,22 +10,21 @@ export type {
   EngineSignalRequest,
   EngineStatus
 } from './engine/types'
-export { Flow } from './flow/contract'
+export type { Flow } from './flow/contract'
+export { flow } from './flow/contract'
 export type {
+  DependenciesOf,
   DependencyFunctions,
   ErrorsOf,
-  FlowContract,
   FlowExecutionResult,
   FlowHandler,
   FlowImplementation,
-  FlowOptions,
-  FlowSpec,
+  FlowOf,
   FlowTools,
   ParamsOf,
   RequirementsOf,
   ResultOf,
-  SignalsOf,
-  SpecOf
+  SignalsOf
 } from './flow/types'
 export { Layer } from './layer/layer'
 export type {

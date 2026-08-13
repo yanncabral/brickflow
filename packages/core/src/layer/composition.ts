@@ -24,7 +24,14 @@ export function flattenLayer(layer: AnyLayer): readonly FlattenedLayerEntry[] {
           throw new Error(`Duplicate durable Flow ID: ${id}`)
         }
         durableIds.add(id)
-        flattened.push(Object.freeze({ id, implementation: entry }))
+        flattened.push(
+          Object.freeze({
+            id,
+            key,
+            layerPath: Object.freeze([...path]),
+            implementation: entry
+          })
+        )
       } else if (isLayer(entry)) {
         visit(entry, path)
       } else {
@@ -44,6 +51,31 @@ export function lookupLayer(
   durableId: string
 ): FlattenedLayerEntry['implementation'] | undefined {
   return flattenLayer(layer).find(({ id }) => id === durableId)?.implementation
+}
+
+export function resolveLayerDependency(
+  layer: AnyLayer,
+  caller: FlattenedLayerEntry,
+  alias: string
+): FlattenedLayerEntry {
+  const entries = flattenLayer(layer)
+  const inCallerScope = entries.filter(
+    (entry) => entry.key === alias && entry.layerPath.join('.') === caller.layerPath.join('.')
+  )
+  const matches =
+    inCallerScope.length > 0 ? inCallerScope : entries.filter((entry) => entry.key === alias)
+
+  if (matches.length === 0) {
+    throw new Error(`Missing dependency Flow entry "${alias}" in the configured Layer`)
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `Ambiguous dependency Flow entry "${alias}" resolved to multiple durable paths: ${matches
+        .map(({ id }) => id)
+        .join(', ')}`
+    )
+  }
+  return matches[0] as FlattenedLayerEntry
 }
 
 export function effectiveLayerProviders(layer: AnyLayer): Readonly<Record<string, unknown>> {

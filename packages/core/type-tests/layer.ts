@@ -1,5 +1,6 @@
 import {
-  Flow,
+  type Flow,
+  flow,
   Layer,
   type LayerEntriesOf,
   type LayerProvidersOf,
@@ -8,33 +9,23 @@ import {
   type RequirementConflict
 } from '../src/index'
 
-type Empty = Record<never, never>
-
 type Database = { find(id: string): string }
 type Logger = { log(message: string): void }
 
-class GetUserFlow extends Flow<{
+interface GetUserFlow extends Flow {
   params: { id: string }
   result: { id: string }
-  errors: never
   requires: { database: Database; logger: Logger }
-  depends: Empty
-  signals: Empty
-}> {}
+}
 
-class AuditFlow extends Flow<{
+interface AuditFlow extends Flow {
   params: undefined
   result: undefined
-  errors: never
   requires: { logger: Logger }
-  depends: Empty
-  signals: Empty
-}> {}
+}
 
-const getUser = new GetUserFlow({ depends: {}, requires: ['database', 'logger'] }, ({ id }) => ({
-  id
-}))
-const audit = new AuditFlow({ depends: {}, requires: ['logger'] }, () => undefined)
+const getUser = flow<GetUserFlow>(({ id }) => ({ id }))
+const audit = flow<AuditFlow>(() => undefined)
 const users = new Layer('users', { getUser })
 const application = new Layer('application', { users, audit })
 
@@ -72,29 +63,19 @@ type PrimaryService = { kind: 'primary'; run(): string }
 type SecondaryService = { kind: 'secondary'; run(): string }
 type UnionService = PrimaryService | SecondaryService
 
-class UnionServiceFlow extends Flow<{
+interface UnionServiceFlow extends Flow {
   params: undefined
   result: undefined
-  errors: never
   requires: { service: UnionService }
-  depends: Empty
-  signals: Empty
-}> {}
-
-class CompatibleUnionServiceFlow extends Flow<{
+}
+interface CompatibleUnionServiceFlow extends Flow {
   params: undefined
   result: undefined
-  errors: never
   requires: { service: UnionService }
-  depends: Empty
-  signals: Empty
-}> {}
+}
 
-const unionService = new UnionServiceFlow({ depends: {}, requires: ['service'] }, () => undefined)
-const compatibleUnionService = new CompatibleUnionServiceFlow(
-  { depends: {}, requires: ['service'] },
-  () => undefined
-)
+const unionService = flow<UnionServiceFlow>(() => undefined)
+const compatibleUnionService = flow<CompatibleUnionServiceFlow>(() => undefined)
 const singleUnionLayer = new Layer('single-union', { unionService })
 const duplicateUnionLayer = new Layer('duplicate-union', {
   unionService,
@@ -108,18 +89,82 @@ duplicateUnionRequirement satisfies UnionService
 singleUnionLayer.provide({ service: { kind: 'primary', run: () => 'ok' } })
 duplicateUnionLayer.provide({ service: { kind: 'secondary', run: () => 'ok' } })
 
-class ConflictingLoggerFlow extends Flow<{
+interface DeclaredDependencyFlow extends Flow {
+  params: { id: string }
+  result: string
+}
+interface CompatibleDependencyFlow extends Flow {
+  params: { id: string }
+  result: string
+}
+interface IncompatibleDependencyFlow extends Flow {
+  params: { count: number }
+  result: number
+}
+interface DependencyCallerFlow extends Flow {
+  params: undefined
+  result: string
+  depends: { child: DeclaredDependencyFlow }
+}
+
+const compatibleDependency = flow<CompatibleDependencyFlow>(({ id }) => id)
+const incompatibleDependency = flow<IncompatibleDependencyFlow>(({ count }) => count)
+const dependencyCaller = flow<DependencyCallerFlow>(async (_params, _requirements, { child }) =>
+  child({ id: '1' })
+)
+
+new Layer('missing-dependency', { dependencyCaller })
+new Layer('compatible-direct-dependency', { dependencyCaller, child: compatibleDependency })
+// @ts-expect-error a present dependency alias must implement the declared Flow shape
+new Layer('incompatible-direct-dependency', { dependencyCaller, child: incompatibleDependency })
+
+const compatibleNestedDependency = new Layer('compatible-nested-dependency', {
+  child: compatibleDependency
+})
+const incompatibleNestedDependency = new Layer('incompatible-nested-dependency', {
+  child: incompatibleDependency
+})
+new Layer('compatible-global-dependency', {
+  dependencyCaller,
+  compatibleNestedDependency
+})
+new Layer('incompatible-global-dependency', {
+  // @ts-expect-error a structurally resolved nested dependency must implement the declared Flow shape
+  dependencyCaller,
+  incompatibleNestedDependency
+})
+new Layer('direct-dependency-takes-scope-precedence', {
+  dependencyCaller,
+  child: compatibleDependency,
+  incompatibleNestedDependency
+})
+
+const nestedDependencyCaller = new Layer('nested-dependency-caller', { dependencyCaller })
+new Layer('compatible-top-level-fallback', {
+  nestedDependencyCaller,
+  child: compatibleDependency
+})
+
+new Layer('incompatible-top-level-fallback', {
+  // @ts-expect-error a nested caller's global fallback must implement the declared Flow shape
+  nestedDependencyCaller,
+  child: incompatibleDependency
+})
+new Layer('ambiguous-global-dependency', {
+  dependencyCaller,
+  compatibleNestedDependency,
+  incompatibleNestedDependency
+})
+
+interface ConflictingLoggerFlow extends Flow {
   params: undefined
   result: undefined
-  errors: never
   requires: { logger: { write(value: number): void } }
-  depends: Empty
-  signals: Empty
-}> {}
+}
 
 const conflictLayer = new Layer('conflict', {
   audit,
-  conflicting: new ConflictingLoggerFlow({ depends: {}, requires: ['logger'] }, () => undefined)
+  conflicting: flow<ConflictingLoggerFlow>(() => undefined)
 })
 
 type ConflictRequirements = LayerRequirementsOf<typeof conflictLayer>

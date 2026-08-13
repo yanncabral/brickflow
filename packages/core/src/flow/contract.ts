@@ -1,30 +1,17 @@
 import { markFlowImplementation } from './implementation'
-import type {
-  FlowConstructorArgs,
-  FlowContract,
-  FlowHandler,
-  FlowImplementation,
-  FlowOptions,
-  FlowSpec
-} from './types'
+import type { FlowHandler, FlowImplementation } from './types'
 
-export class Flow<S extends FlowSpec> implements FlowImplementation<S> {
-  readonly contract: FlowContract<S>
-  readonly depends: S['depends']
-  readonly requires: readonly (keyof S['requires'] & string)[]
-  readonly handler: FlowHandler<S>
+export interface Flow {
+  params: unknown
+  result: unknown
+  errors?: unknown
+  requires?: object
+  depends?: Readonly<Record<string, Flow>>
+  signals?: object
+}
 
-  constructor(...args: FlowConstructorArgs<S>) {
-    const hasOptions = args.length === 2
-    const options = (hasOptions ? args[0] : { depends: {} }) as FlowOptions<S>
-    const handler = (hasOptions ? args[1] : args[0]) as FlowHandler<S>
-
-    this.contract = this.constructor as FlowContract<S>
-    this.depends = Object.freeze({ ...options.depends }) as S['depends']
-    this.requires = Object.freeze([...(options.requires ?? [])]) as readonly (keyof S['requires'] &
-      string)[]
-    this.handler = handler
-    markFlowImplementation(this)
-    Object.freeze(this)
-  }
+export function flow<F extends Flow>(handler: FlowHandler<F>): FlowImplementation<F> {
+  const implementation = { handler } as FlowImplementation<F>
+  markFlowImplementation(implementation)
+  return Object.freeze(implementation)
 }

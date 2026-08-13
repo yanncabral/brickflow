@@ -1,23 +1,14 @@
 import { describe, expect, test } from 'bun:test'
-import { Flow, Layer } from '../src/index'
+import { type Flow, flow, Layer } from '../src/index'
 import { flattenLayer, lookupLayer } from '../src/layer/composition'
 
-type Empty = Record<never, never>
-
-type GetUserSpec = {
+interface GetUserFlow extends Flow {
   params: { id: string }
   result: { id: string }
-  errors: never
   requires: { database: { find(id: string): string }; logger: { log(message: string): void } }
-  depends: Empty
-  signals: Empty
 }
 
-class GetUserFlow extends Flow<GetUserSpec> {}
-
-const getUser = new GetUserFlow({ depends: {}, requires: ['database', 'logger'] }, ({ id }) => ({
-  id
-}))
+const getUser = flow<GetUserFlow>(({ id }) => ({ id }))
 
 describe('Layer', () => {
   test('exposes immutable entries directly and stable nested durable IDs', () => {

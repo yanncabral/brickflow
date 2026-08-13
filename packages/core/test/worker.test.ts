@@ -3,7 +3,8 @@ import {
   type Engine,
   type EngineExecutionHandle,
   type EngineExecutionRequest,
-  Flow,
+  type Flow,
+  flow,
   Layer,
   P,
   UnhandledFlowFailureError,
@@ -13,7 +14,7 @@ import {
 type Empty = Record<never, never>
 
 type Failure = 'missing' | { type: 'unavailable'; retryAfter: number }
-type RootSpec = {
+interface RootFlow extends Flow {
   params: { id: string }
   result: { id: string }
   errors: Failure
@@ -24,26 +25,25 @@ type RootSpec = {
   }
 }
 
-class RootFlow extends Flow<RootSpec> {}
-const root = new RootFlow({ depends: {}, requires: ['database'] }, ({ id }) => ({ id }))
+const root = flow<RootFlow>(({ id }) => ({ id }))
 
-class ChildFlow extends Flow<{
+interface ChildFlow extends Flow {
   params: { id: string }
   result: string
   errors: never
   requires: Empty
   depends: Empty
   signals: { approve: { request: { id: string }; response: string } }
-}> {}
+}
 
-class ParentFlow extends Flow<{
+interface ParentFlow extends Flow {
   params: { id: string }
   result: string
   errors: never
   requires: Empty
-  depends: { child: typeof ChildFlow }
+  depends: { child: ChildFlow }
   signals: { approve: { request: { id: string }; response: string } }
-}> {}
+}
 
 class FakeEngine implements Engine {
   readonly requests: EngineExecutionRequest<unknown, unknown>[] = []
@@ -123,19 +123,15 @@ describe('Worker and FlowRun', () => {
   })
 
   test('resolves distinct Flow callbacks by durable path and preserves propagated child namespaces', async () => {
-    const child = new ChildFlow(
-      { depends: {} },
-      async ({ id }, _requirements, _dependencies, { signals }) => signals.approve({ id })
+    const child = flow<ChildFlow>(async ({ id }, _requirements, _dependencies, { signals }) =>
+      signals.approve({ id })
     )
-    const parent = new ParentFlow(
-      { depends: { child: ChildFlow } },
-      async ({ id }, _requirements, { child }, { signals }) => {
-        const own = await signals.approve({ id: `parent-${id}` })
-        const nested = await child({ id: `child-${id}` })
-        return `${own}|${nested}`
-      }
-    )
-    const files = new Layer('files', { editFile: parent, validateFile: child })
+    const parent = flow<ParentFlow>(async ({ id }, _requirements, { child }, { signals }) => {
+      const own = await signals.approve({ id: `parent-${id}` })
+      const nested = await child({ id: `child-${id}` })
+      return `${own}|${nested}`
+    })
+    const files = new Layer('files', { editFile: parent, child })
     const worker = new Worker({ engine: new FakeEngine(), layer: files })
     const calls: string[] = []
 
@@ -152,7 +148,7 @@ describe('Worker and FlowRun', () => {
                 return 'parent-approved'
               }
             },
-            validateFile: {
+            child: {
               approve: ({ id }) => {
                 calls.push(`sibling:${id}`)
                 return 'sibling-approved'
@@ -168,28 +164,24 @@ describe('Worker and FlowRun', () => {
       request?.signal({ name: 'files.editFile.approve', request: { id: 'parent-1' } })
     ).resolves.toBe('parent-approved')
     await expect(
-      request?.signal({ name: 'files.validateFile.approve', request: { id: 'child-1' } })
+      request?.signal({ name: 'files.child.approve', request: { id: 'child-1' } })
     ).resolves.toBe('sibling-approved')
     await expect(
-      request?.signal({ name: 'files.validateFile.approve', request: { id: 'sibling-1' } })
+      request?.signal({ name: 'files.child.approve', request: { id: 'sibling-1' } })
     ).resolves.toBe('sibling-approved')
     expect(calls).toEqual(['parent:parent-1', 'sibling:child-1', 'sibling:sibling-1'])
   })
 
   test('executes Flow tools and dependency calls with their resolved durable namespaces', async () => {
-    const child = new ChildFlow(
-      { depends: {} },
-      async ({ id }, _requirements, _dependencies, { signals }) => signals.approve({ id })
+    const child = flow<ChildFlow>(async ({ id }, _requirements, _dependencies, { signals }) =>
+      signals.approve({ id })
     )
-    const parent = new ParentFlow(
-      { depends: { child: ChildFlow } },
-      async ({ id }, _requirements, { child }, { signals }) => {
-        const own = await signals.approve({ id: `parent-${id}` })
-        const nested = await child({ id: `child-${id}` })
-        return `${own}|${nested}`
-      }
-    )
-    const files = new Layer('files', { editFile: parent, validateFile: child })
+    const parent = flow<ParentFlow>(async ({ id }, _requirements, { child }, { signals }) => {
+      const own = await signals.approve({ id: `parent-${id}` })
+      const nested = await child({ id: `child-${id}` })
+      return `${own}|${nested}`
+    })
+    const files = new Layer('files', { editFile: parent, child })
     const worker = new Worker({ engine: new ExecutingEngine(), layer: files })
     const calls: string[] = []
 
@@ -205,7 +197,7 @@ describe('Worker and FlowRun', () => {
                 return 'parent-approved'
               }
             },
-            validateFile: {
+            child: {
               approve: ({ id }) => {
                 calls.push(`child:${id}`)
                 return 'child-approved'
@@ -220,63 +212,54 @@ describe('Worker and FlowRun', () => {
     expect(calls).toEqual(['parent:parent-1', 'child:child-1'])
   })
 
-  test('merges nested Layer providers and projects only direct requirements per invocation', async () => {
-    class DatabaseFlow extends Flow<{
+  test('merges nested Layer providers and passes the full effective environment per invocation', async () => {
+    interface DatabaseFlow extends Flow {
       params: undefined
       result: string
       errors: never
       requires: { database: { name: string } }
       depends: Empty
       signals: Empty
-    }> {}
-    class LoggerFlow extends Flow<{
+    }
+    interface LoggerFlow extends Flow {
       params: undefined
       result: string
       errors: never
       requires: { logger: { name: string } }
-      depends: { database: typeof DatabaseFlow }
+      depends: { database: DatabaseFlow }
       signals: Empty
-    }> {}
+    }
     const seen: Readonly<Record<string, unknown>>[] = []
-    const database = new DatabaseFlow(
-      { depends: {}, requires: ['database'] },
-      (_params, requirements) => {
-        seen.push(requirements)
-        return requirements.database.name
-      }
-    )
-    const logger = new LoggerFlow(
-      { depends: { database: DatabaseFlow }, requires: ['logger'] },
-      async (_params, requirements, dependencies) => {
-        seen.push(requirements)
-        return `${requirements.logger.name}:${await dependencies.database(undefined)}`
-      }
-    )
+    const database = flow<DatabaseFlow>((_params, requirements) => {
+      seen.push(requirements)
+      return requirements.database.name
+    })
+    const logger = flow<LoggerFlow>(async (_params, requirements, dependencies) => {
+      seen.push(requirements)
+      return `${requirements.logger.name}:${await dependencies.database(undefined)}`
+    })
     const nested = new Layer('services', { database }).provide({ database: { name: 'db' } })
     const layer = new Layer('application', { logger, nested }).provide({ logger: { name: 'log' } })
     const worker = new Worker({ engine: new ExecutingEngine(), layer })
 
     expect(await worker.run(logger, undefined)).toBe('log:db')
-    expect(seen).toEqual([{ logger: { name: 'log' } }, { database: { name: 'db' } }])
+    expect(seen).toEqual([
+      { logger: { name: 'log' }, database: { name: 'db' } },
+      { logger: { name: 'log' }, database: { name: 'db' } }
+    ])
   })
 
   test('rejects conflicting nested providers unless a top-level provider overrides them', async () => {
-    class ServiceFlow extends Flow<{
+    interface ServiceFlow extends Flow {
       params: undefined
       result: string
       errors: never
       requires: { service: { name: string } }
       depends: Empty
       signals: Empty
-    }> {}
-    const first = new ServiceFlow(
-      { depends: {}, requires: ['service'] },
-      (_params, { service }) => service.name
-    )
-    const second = new ServiceFlow(
-      { depends: {}, requires: ['service'] },
-      (_params, { service }) => service.name
-    )
+    }
+    const first = flow<ServiceFlow>((_params, { service }) => service.name)
+    const second = flow<ServiceFlow>((_params, { service }) => service.name)
     const left = new Layer('left', { first }).provide({ service: { name: 'left' } })
     const right = new Layer('right', { second }).provide({ service: { name: 'right' } })
 
@@ -310,33 +293,41 @@ describe('Worker and FlowRun', () => {
       )
     ).toThrow(/ambiguous root flow.*application\.first\.root.*application\.second\.root/i)
 
-    const firstChild = new ChildFlow({ depends: {} }, ({ id }) => id)
-    const secondChild = new ChildFlow({ depends: {} }, ({ id }) => id)
-    const parent = new ParentFlow(
-      { depends: { child: ChildFlow } },
-      async ({ id }, _r, { child }) => child({ id })
-    )
-    const ambiguousDependencyLayer = new Layer('files', { parent, firstChild, secondChild })
-    const worker = new Worker({ engine: new FakeEngine(), layer: ambiguousDependencyLayer })
-    expect(() => worker.run(parent, { id: '1' }, { signals: {} as never })).toThrow(
-      /ambiguous dependency.*child.*files\.firstChild.*files\.secondChild/i
-    )
+    const firstChild = flow<ChildFlow>(({ id }) => id)
+    const secondChild = flow<ChildFlow>(({ id }) => id)
+    const parent = flow<ParentFlow>(async ({ id }, _r, { child }) => child({ id }))
+    const ambiguousDependencyLayer = new Layer('files', {
+      parent,
+      first: new Layer('first', { child: firstChild }),
+      second: new Layer('second', { child: secondChild })
+    })
+    const worker = new Worker({ engine: new ExecutingEngine(), layer: ambiguousDependencyLayer })
+    expect(
+      Promise.resolve(worker.run(parent, { id: '1' }, { signals: {} as never }))
+    ).rejects.toThrow(/ambiguous dependency.*child.*files\.first\.child.*files\.second\.child/i)
+  })
+
+  test('reports a missing dependency alias when execution reaches the call', async () => {
+    const parent = flow<ParentFlow>(async ({ id }, _requirements, { child }) => child({ id }))
+    const worker = new Worker({
+      engine: new ExecutingEngine(),
+      layer: new Layer('files', { parent })
+    })
+
+    await expect(
+      Promise.resolve(worker.run(parent, { id: '1' }, { signals: {} as never }))
+    ).rejects.toThrow(/missing dependency.*child.*configured layer/i)
   })
 
   test('allows a parent call to handle a child signal locally and propagate undefined to the boundary', async () => {
-    const child = new ChildFlow(
-      { depends: {} },
-      async ({ id }, _requirements, _dependencies, { signals }) => signals.approve({ id })
+    const child = flow<ChildFlow>(async ({ id }, _requirements, _dependencies, { signals }) =>
+      signals.approve({ id })
     )
-    const locallyHandled = new ParentFlow(
-      { depends: { child: ChildFlow } },
-      async ({ id }, _requirements, { child }) =>
-        child({ id }, { signals: { approve: ({ id: childId }) => `local:${childId}` } })
+    const locallyHandled = flow<ParentFlow>(async ({ id }, _requirements, { child }) =>
+      child({ id }, { signals: { approve: ({ id: childId }) => `local:${childId}` } })
     )
-    const propagated = new ParentFlow(
-      { depends: { child: ChildFlow } },
-      async ({ id }, _requirements, { child }) =>
-        child({ id }, { signals: { approve: () => undefined } })
+    const propagated = flow<ParentFlow>(async ({ id }, _requirements, { child }) =>
+      child({ id }, { signals: { approve: () => undefined } })
     )
     const layer = new Layer('files', { locallyHandled, propagated, child })
     const boundary = {
@@ -470,9 +461,9 @@ describe('Worker and FlowRun', () => {
     ).rejects.toBe(defect)
   })
 
-  test('rejects roots outside the configured layer and missing providers', () => {
+  test('rejects roots outside the configured layer without runtime provider-key validation', () => {
     const engine = new FakeEngine()
-    const absent = new RootFlow({ depends: {}, requires: ['database'] }, ({ id }) => ({ id }))
+    const absent = flow<RootFlow>(({ id }) => ({ id }))
     const layer = new Layer('application', { root })
     const worker = new Worker({ engine, layer })
 
@@ -493,7 +484,7 @@ describe('Worker and FlowRun', () => {
           signals: { application: { root: { approve: () => ({ approved: true }) } } }
         }
       )
-    ).toThrow(/missing flow provider.*database/i)
-    expect(engine.requests).toHaveLength(0)
+    ).not.toThrow()
+    expect(engine.requests).toHaveLength(1)
   })
 })
