@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { executeFlowImplementation, isFlowImplementation } from '../src/flow/implementation'
-import { Flow } from '../src/index'
+import { type Flow, flow } from '../src/index'
 
 interface User {
   id: string
@@ -10,86 +10,46 @@ interface UserRepository {
   find(id: string): Promise<User | undefined>
 }
 
-type Empty = Record<never, never>
-
-type GetUserSpec = {
+interface GetUserFlow extends Flow {
   params: { id: string }
   result: User
   errors: 'user-not-found'
   requires: { users: UserRepository }
-  depends: Empty
-  signals: Empty
 }
 
-class GetUserFlow extends Flow<GetUserSpec> {}
-
-type SignaledSpec = {
+interface SignaledFlow extends Flow {
   params: { value: string }
   result: string
-  errors: never
-  requires: Empty
-  depends: Empty
   signals: { refresh: { request: { force: boolean }; response: 'refreshed' } }
 }
 
-class SignaledFlow extends Flow<SignaledSpec> {}
-
 describe('Flow implementations', () => {
-  test('constructs immutable, distinct implementations associated with their contract', () => {
-    const first = new GetUserFlow({ depends: {}, requires: ['users'] }, async ({ id }) => ({ id }))
-    const second = new GetUserFlow({ depends: {}, requires: ['users'] }, async ({ id }) => ({
-      id: `second-${id}`
-    }))
+  test('creates immutable, distinct implementations for the same Flow interface', () => {
+    const first = flow<GetUserFlow>(async ({ id }) => ({ id }))
+    const second = flow<GetUserFlow>(async ({ id }) => ({ id: `second-${id}` }))
 
     expect(first).not.toBe(second)
-    expect(first.contract).toBe(GetUserFlow)
-    expect(second.contract).toBe(GetUserFlow)
     expect(isFlowImplementation(first)).toBe(true)
     expect(Object.isFrozen(first)).toBe(true)
   })
 
-  test('copies and freezes dependency metadata without retaining mutable options', () => {
-    const options = { depends: {} }
-    const implementation = new GetUserFlow({ ...options, requires: ['users'] }, async ({ id }) => ({
-      id
-    }))
+  test('stores only the handler as enumerable runtime metadata', () => {
+    const handler = async ({ id }: GetUserFlow['params']) => ({ id })
+    const implementation = flow<GetUserFlow>(handler)
 
-    Object.assign(options.depends, { injected: GetUserFlow })
-
-    expect(implementation.depends).toEqual({})
-    expect(implementation.depends).not.toBe(options.depends)
-    expect(Object.isFrozen(implementation.depends)).toBe(true)
-  })
-
-  test('accepts explicit empty dependency options with a valid handler', () => {
-    const implementation = new GetUserFlow(
-      { depends: {}, requires: ['users'] },
-      async ({ id }) => ({ id })
-    )
-
-    expect(implementation.depends).toEqual({})
-    expect(isFlowImplementation(implementation)).toBe(true)
+    expect(Object.keys(implementation)).toEqual(['handler'])
+    expect(implementation.handler).toBe(handler)
   })
 
   test('rejects structural lookalikes as Flow implementations', () => {
-    const implementation = new GetUserFlow(
-      { depends: {}, requires: ['users'] },
-      async ({ id }) => ({ id })
-    )
-    const lookalike = {
-      contract: implementation.contract,
-      depends: implementation.depends,
-      handler: implementation.handler
-    }
+    const implementation = flow<GetUserFlow>(async ({ id }) => ({ id }))
+    const lookalike = { handler: implementation.handler }
 
     expect(isFlowImplementation(lookalike)).toBe(false)
   })
 
   test('rejects objects that inherit a Flow implementation brand', () => {
-    const implementation = new GetUserFlow(
-      { depends: {}, requires: ['users'] },
-      async ({ id }) => ({ id })
-    )
+    const implementation = flow<GetUserFlow>(async ({ id }) => ({ id }))
     const inheritor = Object.create(implementation)
 
     expect(isFlowImplementation(inheritor)).toBe(false)
@@ -101,15 +61,12 @@ describe('Flow implementations', () => {
         return { id }
       }
     }
-    const implementation = new GetUserFlow(
-      { depends: {}, requires: ['users'] },
-      async ({ id }, requirements, dependencies, tools) => {
-        expect(dependencies).toEqual({})
-        expect(tools.signals).toEqual({})
-        const user = await requirements.users.find(id)
-        return user ?? tools.fail('user-not-found')
-      }
-    )
+    const implementation = flow<GetUserFlow>(async ({ id }, requirements, dependencies, tools) => {
+      expect(dependencies).toEqual({})
+      expect(tools.signals).toEqual({})
+      const user = await requirements.users.find(id)
+      return user ?? tools.fail('user-not-found')
+    })
 
     const outcome = await executeFlowImplementation(implementation, { id: 'u1' }, { users }, {}, {})
 
@@ -124,8 +81,7 @@ describe('Flow implementations', () => {
         return 'refreshed' as const
       }
     }
-    const implementation = new SignaledFlow(
-      { depends: {} },
+    const implementation = flow<SignaledFlow>(
       async ({ value }, _requirements, _dependencies, tools) => {
         const response = await tools.signals.refresh({ force: value === 'u1' })
         expect(response).toBe('refreshed')
@@ -146,9 +102,8 @@ describe('Flow implementations', () => {
   })
 
   test('distinguishes typed failures from successful results', async () => {
-    const implementation = new GetUserFlow(
-      { depends: {}, requires: ['users'] },
-      (_params, _requirements, _dependencies, { fail }) => fail('user-not-found')
+    const implementation = flow<GetUserFlow>((_params, _requirements, _dependencies, { fail }) =>
+      fail('user-not-found')
     )
 
     const outcome = await executeFlowImplementation(
@@ -170,7 +125,7 @@ describe('Flow implementations', () => {
 
   test('does not convert unexpected defects into typed failures', async () => {
     const defect = new Error('database exploded')
-    const implementation = new GetUserFlow({ depends: {}, requires: ['users'] }, () => {
+    const implementation = flow<GetUserFlow>(() => {
       throw defect
     })
 

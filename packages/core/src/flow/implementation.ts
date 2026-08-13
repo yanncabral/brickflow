@@ -1,10 +1,11 @@
 import type { SignalDefinitions, SignalFunctions } from '../signal/types'
+import type { Flow } from './contract'
 import { failWith, isFlowFailure, readFlowFailure } from './failure'
 import type {
   DependencyFunctions,
+  ErrorsOf,
   FlowExecutionResult,
   FlowImplementation,
-  FlowSpec,
   ParamsOf,
   RequirementsOf,
   SignalsOf
@@ -32,13 +33,13 @@ export function isFlowImplementation(value: unknown): value is FlowImplementatio
   )
 }
 
-export async function executeFlowImplementation<S extends FlowSpec>(
-  implementation: FlowImplementation<S>,
-  params: ParamsOf<S>,
-  requirements: RequirementsOf<S>,
-  dependencies: DependencyFunctions<S>,
-  signals: SignalsOf<S> extends SignalDefinitions ? SignalFunctions<SignalsOf<S>> : never
-): Promise<FlowExecutionResult<S>> {
+export async function executeFlowImplementation<F extends Flow>(
+  implementation: FlowImplementation<F>,
+  params: ParamsOf<F>,
+  requirements: RequirementsOf<F>,
+  dependencies: DependencyFunctions<F>,
+  signals: SignalsOf<F> extends SignalDefinitions ? SignalFunctions<SignalsOf<F>> : never
+): Promise<FlowExecutionResult<F>> {
   try {
     const value = await implementation.handler(params, requirements, dependencies, {
       fail: failWith,
@@ -46,13 +47,7 @@ export async function executeFlowImplementation<S extends FlowSpec>(
     })
     return { ok: true, value }
   } catch (error) {
-    if (!isFlowFailure(error)) {
-      throw error
-    }
-
-    return {
-      ok: false,
-      error: readFlowFailure(error) as S['errors']
-    }
+    if (!isFlowFailure(error)) throw error
+    return { ok: false, error: readFlowFailure(error) as ErrorsOf<F> }
   }
 }
