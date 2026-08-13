@@ -35,7 +35,9 @@ bun run clean        # remove generated output
 
 - Develop behavior test-first. Run the focused test and observe the expected failure before implementation.
 - Keep public types in focused files; avoid one large barrel containing implementation logic.
-- A Flow class is a runtime contract and its instances are implementations.
+- A Flow interface is a type-only runtime contract; `flow<F>(handler)` creates immutable implementations without tokens or requirement metadata.
+- Dependency aliases resolve by public Layer entry key. Renaming an entry changes binding and durable identity.
+- Provider requirements are static-only in the interface-first variant; handlers receive the full effective provider environment.
 - A Layer chooses Flow implementations and receives structural dependencies through immutable `.provide(...)` calls.
 - Engine adapters implement core interfaces; core never branches on a concrete engine name.
 - Signals are request/response entries declared structurally on a Flow and namespace transitively through Flow/Layer paths.
