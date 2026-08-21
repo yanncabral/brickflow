@@ -258,12 +258,12 @@ type BoundEntries<
   RootId extends string,
   RootEntries extends LayerEntries,
   Entries extends LayerEntries,
-  Provided extends Providers
+  EffectiveProvided extends Providers
 > = {
   readonly [Key in keyof Entries]: Entries[Key] extends FlowImplementation<infer F extends Flow>
-    ? BoundFlow<F, RootId, RootEntries, Entries, Provided>
-    : Entries[Key] extends Layer<infer Id, infer Nested, infer _NestedProvided>
-      ? BoundLayer<Id, Nested, Provided, RootEntries, RootId>
+    ? BoundFlow<F, RootId, RootEntries, Entries, EffectiveProvided>
+    : Entries[Key] extends Layer<infer Id, infer Nested, infer NestedProvided>
+      ? BoundLayer<Id, Nested, NestedProvided, RootEntries, RootId, EffectiveProvided>
       : never
 }
 
@@ -272,8 +272,10 @@ export type BoundLayer<
   Entries extends LayerEntries,
   Provided extends Providers,
   RootEntries extends LayerEntries = Entries,
-  RootId extends string = Id
-> = LayerState<Id, Entries, Provided> & BoundEntries<RootId, RootEntries, Entries, Provided>
+  RootId extends string = Id,
+  EffectiveProvided extends Providers = EffectiveLayerProviders<Entries, Provided>
+> = LayerState<Id, Entries, Provided> &
+  BoundEntries<RootId, RootEntries, Entries, EffectiveProvided>
 
 export interface LayerState<
   Id extends string = string,
@@ -283,9 +285,11 @@ export interface LayerState<
   readonly id: Id
   readonly entries: Readonly<Entries>
   readonly providers: Readonly<Provided>
-  provide<const Values extends Partial<Omit<RequirementsFromEntries<Entries>, keyof Provided>>>(
-    values: Values
-  ): BoundLayer<Id, Entries, EffectiveLayerProviders<Entries, Provided & Values>>
+  provide<
+    const Values extends Partial<
+      Omit<RequirementsFromEntries<Entries>, keyof EffectiveLayerProviders<Entries, Provided>>
+    >
+  >(values: Values): BoundLayer<Id, Entries, Provided & Values>
   override<
     const Values extends Partial<
       Pick<
@@ -293,20 +297,14 @@ export interface LayerState<
         keyof Provided & keyof RequirementsFromEntries<Entries>
       >
     >
-  >(
-    values: Values
-  ): BoundLayer<
-    Id,
-    Entries,
-    EffectiveLayerProviders<Entries, Omit<Provided, keyof Values> & Values>
-  >
+  >(values: Values): BoundLayer<Id, Entries, Omit<Provided, keyof Values> & Values>
 }
 
 export type Layer<
   Id extends string = string,
   Entries extends LayerEntries = LayerEntries,
   Provided extends Providers = Record<never, never>
-> = BoundLayer<Id, Entries, EffectiveLayerProviders<Entries, Provided>>
+> = BoundLayer<Id, Entries, Provided>
 
 export interface LayerConstructor {
   new <const Id extends string, const Entries extends LayerEntries>(

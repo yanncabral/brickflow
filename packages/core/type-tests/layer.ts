@@ -48,6 +48,23 @@ withDatabase.providers.database satisfies Database
 complete.providers.logger satisfies Logger
 overridden.providers.database satisfies Database
 
+const nestedComplete = users.provide({ database, logger })
+const applicationWithNestedProviders = new Layer('application-with-nested-providers', {
+  users: nestedComplete,
+  audit
+})
+
+// @ts-expect-error nested-only providers are not exposed on the outer Layer
+applicationWithNestedProviders.providers.database
+// Nested providers still satisfy bound Flow requirements across the complete Layer tree.
+applicationWithNestedProviders.audit.run(undefined)
+
+declare const applicationWithNestedProviderMap: LayerProvidersOf<
+  typeof applicationWithNestedProviders
+>
+// @ts-expect-error LayerProvidersOf only includes providers directly attached to the Layer
+applicationWithNestedProviderMap.logger
+
 // @ts-expect-error duplicate inline provider key is rejected
 withDatabase.provide({ database })
 // @ts-expect-error only already-provided keys can be overridden
