@@ -15,11 +15,17 @@ export { flow } from './flow/contract'
 export type {
   DependenciesOf,
   DependencyFunctions,
+  EffectiveDependenciesOf,
+  EffectiveErrorsOf,
+  EffectiveRequirementsOf,
+  EffectiveSignalsOf,
   ErrorsOf,
   FlowExecutionResult,
   FlowHandler,
   FlowImplementation,
   FlowOf,
+  FlowRunOptionArgs,
+  FlowRunOptions,
   FlowTools,
   ParamsOf,
   RequirementsOf,
@@ -62,6 +68,13 @@ export type {
   SignalRequest,
   SignalResponse
 } from './signal/types'
+export type { Worker } from './worker/contract'
+export {
+  DuplicateLocalRunIdError,
+  LocalRunCancelledError,
+  LocalWorker,
+  localWorker
+} from './worker/local-worker'
 export { UnhandledFlowFailureError } from './worker/run'
 export type {
   CompleteFlowRun,
@@ -69,9 +82,11 @@ export type {
   FlowRunControls,
   IncompleteFlowRun,
   RunMetadata,
-  WorkerConstructor,
-  WorkerOptions,
-  WorkerRunOptions,
-  WorkerState
+  WorkerRunOptions
 } from './worker/types'
-export { Worker } from './worker/worker'
+export type {
+  LegacyWorkerConstructor,
+  LegacyWorkerOptions,
+  LegacyWorkerState
+} from './worker/worker'
+export { LegacyWorker } from './worker/worker'

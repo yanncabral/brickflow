@@ -1,13 +1,26 @@
-import { isFlowImplementation } from '../flow/implementation'
-import { flattenLayer, isLayer, LayerRuntime } from './composition'
+import { isFlowImplementation, markFlowImplementation } from '../flow/implementation'
+import type { FlowImplementation } from '../flow/types'
+import { executeFlow } from '../worker/execution'
+import {
+  effectiveLayerProviders,
+  flattenLayer,
+  isLayer,
+  LayerRuntime,
+  resolveLayerDependency
+} from './composition'
 import { addProviders, overrideProviders } from './provide'
 import type {
   AnyLayer,
+  FlattenedLayerEntry,
   LayerConstructor,
   LayerEntries,
   Providers,
   ReservedLayerEntryName
 } from './types'
+
+function flowIdentity(value: FlowImplementation): FlowImplementation {
+  return value
+}
 
 const reservedNames: ReadonlySet<ReservedLayerEntryName> = new Set([
   'id',
@@ -47,13 +60,92 @@ class LayerImplementation<
       Object.defineProperty(this, key, {
         configurable: false,
         enumerable: true,
-        value: entry,
+        value: this.bindEntry(entry, key),
         writable: false
       })
     }
 
     flattenLayer(this)
     Object.freeze(this)
+  }
+
+  private bindEntry(entry: unknown, key: string): unknown {
+    if (isFlowImplementation(entry)) return this.bindFlow(entry, key)
+    if (isLayer(entry)) return this.bindNestedLayer(entry)
+    return entry
+  }
+
+  private bindFlow(
+    entry: ReturnType<typeof flowIdentity>,
+    key: string,
+    idSuffix?: string
+  ): unknown {
+    const layer = this
+    const bound = {
+      handler: entry.handler,
+      run(
+        params: unknown,
+        options?: {
+          readonly requirements?: Readonly<Record<string, unknown>>
+          readonly signals?: Readonly<Record<string, unknown>>
+          readonly worker?: unknown
+          readonly id?: string
+          readonly metadata?: Readonly<Record<string, unknown>>
+        }
+      ) {
+        const entries = flattenLayer(layer)
+        const root = entries.find(
+          (candidate) =>
+            candidate.implementation === entry &&
+            candidate.key === key &&
+            (idSuffix === undefined || candidate.id.endsWith(idSuffix))
+        ) as FlattenedLayerEntry | undefined
+        if (!root) throw new Error(`Bound Flow entry not found: ${key}`)
+        return executeFlow({
+          root,
+          entries,
+          params,
+          providers: Object.freeze({
+            ...effectiveLayerProviders(layer),
+            ...((options?.requirements as Readonly<Record<string, unknown>> | undefined) ?? {})
+          }),
+          resolveDependency: (caller, alias) =>
+            resolveLayerDependency(layer, caller as FlattenedLayerEntry, alias),
+          ...(options?.signals
+            ? { signals: options.signals as Readonly<Record<string, unknown>> }
+            : {}),
+          ...(options?.worker ? { worker: options.worker as never } : {}),
+          ...(typeof options?.id === 'string' ? { id: options.id } : {}),
+          ...(options?.metadata
+            ? { metadata: options.metadata as Readonly<Record<string, unknown>> }
+            : {})
+        })
+      }
+    }
+    markFlowImplementation(bound)
+    return Object.freeze(bound)
+  }
+
+  private bindNestedLayer(nested: AnyLayer, parentSuffix = nested.id): AnyLayer {
+    const view = Object.create(Object.getPrototypeOf(nested)) as Record<string, unknown>
+    Object.defineProperties(view, {
+      id: { enumerable: true, value: nested.id },
+      entries: { enumerable: false, value: nested.entries },
+      providers: { enumerable: false, value: nested.providers },
+      provide: { value: nested.provide?.bind(nested) },
+      override: { value: nested.override?.bind(nested) }
+    })
+    for (const [key, entry] of Object.entries(nested.entries)) {
+      Object.defineProperty(view, key, {
+        enumerable: true,
+        value: isFlowImplementation(entry)
+          ? this.bindFlow(entry, key, `${parentSuffix}.${key}`)
+          : isLayer(entry)
+            ? this.bindNestedLayer(entry, `${parentSuffix}.${entry.id}`)
+            : entry
+      })
+    }
+    return Object.freeze(view) as unknown as AnyLayer
   }
 
   provide(values: Readonly<Record<string, unknown>>): AnyLayer {

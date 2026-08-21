@@ -6,9 +6,9 @@ import {
   type Flow,
   flow,
   Layer,
+  LegacyWorker,
   P,
-  UnhandledFlowFailureError,
-  Worker
+  UnhandledFlowFailureError
 } from '../src/index'
 
 type Empty = Record<never, never>
@@ -87,7 +87,7 @@ class ExecutingEngine implements Engine {
 function setup(engine = new FakeEngine()) {
   const database = { find: (id: string) => id }
   const layer = new Layer('application', { root }).provide({ database })
-  return { database, engine, layer, worker: new Worker({ engine, layer }) }
+  return { database, engine, layer, worker: new LegacyWorker({ engine, layer }) }
 }
 
 describe('Worker and FlowRun', () => {
@@ -132,7 +132,7 @@ describe('Worker and FlowRun', () => {
       return `${own}|${nested}`
     })
     const files = new Layer('files', { editFile: parent, child })
-    const worker = new Worker({ engine: new FakeEngine(), layer: files })
+    const worker = new LegacyWorker({ engine: new FakeEngine(), layer: files })
     const calls: string[] = []
 
     worker.run(
@@ -182,7 +182,7 @@ describe('Worker and FlowRun', () => {
       return `${own}|${nested}`
     })
     const files = new Layer('files', { editFile: parent, child })
-    const worker = new Worker({ engine: new ExecutingEngine(), layer: files })
+    const worker = new LegacyWorker({ engine: new ExecutingEngine(), layer: files })
     const calls: string[] = []
 
     const value = await worker.run(
@@ -240,7 +240,7 @@ describe('Worker and FlowRun', () => {
     })
     const nested = new Layer('services', { database }).provide({ database: { name: 'db' } })
     const layer = new Layer('application', { logger, nested }).provide({ logger: { name: 'log' } })
-    const worker = new Worker({ engine: new ExecutingEngine(), layer })
+    const worker = new LegacyWorker({ engine: new ExecutingEngine(), layer })
 
     expect(await worker.run(logger, undefined)).toBe('log:db')
     expect(seen).toEqual([
@@ -264,14 +264,14 @@ describe('Worker and FlowRun', () => {
     const right = new Layer('right', { second }).provide({ service: { name: 'right' } })
 
     const conflicting = new Layer('application', { left, right })
-    expect(() => new Worker({ engine: new ExecutingEngine(), layer: conflicting })).toThrow(
+    expect(() => new LegacyWorker({ engine: new ExecutingEngine(), layer: conflicting })).toThrow(
       /conflicting nested layer provider.*service/i
     )
 
     const overridden = conflicting.provide({
       service: { name: 'top' }
     } as never)
-    const worker = new Worker({ engine: new ExecutingEngine(), layer: overridden })
+    const worker = new LegacyWorker({ engine: new ExecutingEngine(), layer: overridden })
     expect(await worker.run(first, undefined)).toBe('top')
   })
 
@@ -280,7 +280,10 @@ describe('Worker and FlowRun', () => {
       first: new Layer('first', { root }),
       second: new Layer('second', { root })
     }).provide({ database: { find: (id: string) => id } })
-    const duplicateRootWorker = new Worker({ engine: new FakeEngine(), layer: duplicateRootLayer })
+    const duplicateRootWorker = new LegacyWorker({
+      engine: new FakeEngine(),
+      layer: duplicateRootLayer
+    })
     expect(() =>
       duplicateRootWorker.run(
         root,
@@ -301,7 +304,10 @@ describe('Worker and FlowRun', () => {
       first: new Layer('first', { child: firstChild }),
       second: new Layer('second', { child: secondChild })
     })
-    const worker = new Worker({ engine: new ExecutingEngine(), layer: ambiguousDependencyLayer })
+    const worker = new LegacyWorker({
+      engine: new ExecutingEngine(),
+      layer: ambiguousDependencyLayer
+    })
     expect(
       Promise.resolve(worker.run(parent, { id: '1' }, { signals: {} as never }))
     ).rejects.toThrow(/ambiguous dependency.*child.*files\.first\.child.*files\.second\.child/i)
@@ -309,7 +315,7 @@ describe('Worker and FlowRun', () => {
 
   test('reports a missing dependency alias when execution reaches the call', async () => {
     const parent = flow<ParentFlow>(async ({ id }, _requirements, { child }) => child({ id }))
-    const worker = new Worker({
+    const worker = new LegacyWorker({
       engine: new ExecutingEngine(),
       layer: new Layer('files', { parent })
     })
@@ -335,7 +341,7 @@ describe('Worker and FlowRun', () => {
     }
 
     expect(
-      await new Worker({ engine: new ExecutingEngine(), layer }).run(
+      await new LegacyWorker({ engine: new ExecutingEngine(), layer }).run(
         locallyHandled,
         { id: '1' },
         {
@@ -344,7 +350,7 @@ describe('Worker and FlowRun', () => {
       )
     ).toBe('local:1')
     expect(
-      await new Worker({ engine: new ExecutingEngine(), layer }).run(
+      await new LegacyWorker({ engine: new ExecutingEngine(), layer }).run(
         propagated,
         { id: '2' },
         {
@@ -444,7 +450,7 @@ describe('Worker and FlowRun', () => {
     const layer = new Layer('application', { root }).provide({
       database: { find: (id: string) => id }
     })
-    const worker = new Worker({ engine, layer })
+    const worker = new LegacyWorker({ engine, layer })
 
     await expect(
       Promise.resolve(
@@ -465,7 +471,7 @@ describe('Worker and FlowRun', () => {
     const engine = new FakeEngine()
     const absent = flow<RootFlow>(({ id }) => ({ id }))
     const layer = new Layer('application', { root })
-    const worker = new Worker({ engine, layer })
+    const worker = new LegacyWorker({ engine, layer })
 
     expect(() =>
       worker.run(

@@ -1,4 +1,11 @@
-import type { InternalSignalHandlers, SignalDefinitions, SignalFunctions } from '../signal/types'
+import type {
+  BoundarySignalHandlers,
+  InternalSignalHandlers,
+  SignalDefinitions,
+  SignalFunctions
+} from '../signal/types'
+import type { Worker } from '../worker/contract'
+import type { FlowRun, RunMetadata } from '../worker/types'
 import type { Flow } from './contract'
 
 type Empty = Record<never, never>
@@ -24,6 +31,9 @@ export type SignalsOf<F extends Flow> =
 
 export type FlowOf<Implementation> = Implementation extends FlowImplementation<infer F> ? F : never
 
+// biome-ignore lint/suspicious/noExplicitAny: heterogeneous Flow implementations are intentionally erased at graph boundaries
+export type AnyFlowImplementation = FlowImplementation<any>
+
 type DependencyFlow<Value> = Value extends Flow ? Value : never
 
 type UnionToIntersection<Value> = (Value extends Value ? (value: Value) => void : never) extends (
@@ -42,6 +52,18 @@ type EffectiveRequirementsFromDependencies<
 > = UnionToIntersection<
   {
     [Key in keyof DependenciesOf<F>]: EffectiveRequirementsOf<
+      DependencyFlow<DependenciesOf<F>[Key]>,
+      Depth
+    >
+  }[keyof DependenciesOf<F>]
+>
+
+type EffectiveDependenciesFromDependencies<
+  F extends Flow,
+  Depth extends readonly unknown[]
+> = UnionToIntersection<
+  {
+    [Key in keyof DependenciesOf<F>]: EffectiveDependenciesOf<
       DependencyFlow<DependenciesOf<F>[Key]>,
       Depth
     >
@@ -75,6 +97,14 @@ export type EffectiveRequirementsOf<
     ? Empty
     : EffectiveRequirementsFromDependencies<F, [...Depth, unknown]>)
 
+export type EffectiveDependenciesOf<F extends Flow, Depth extends readonly unknown[] = []> = {
+  readonly [Key in keyof DependenciesOf<F>]: FlowImplementation<
+    DependencyFlow<DependenciesOf<F>[Key]>
+  >
+} & (Depth['length'] extends 16
+  ? Empty
+  : EffectiveDependenciesFromDependencies<F, [...Depth, unknown]>)
+
 export type EffectiveSignalsOf<
   F extends Flow,
   Depth extends readonly unknown[] = []
@@ -107,8 +137,46 @@ export type FlowHandler<F extends Flow> = (
   tools: FlowTools<F>
 ) => ResultOf<F> | Promise<ResultOf<F>>
 
+type RequiredSection<Key extends PropertyKey, Value> = [Key] extends [never]
+  ? { readonly [Property in never]?: never }
+  : Value
+
+type RequirementsOption<F extends Flow> = RequiredSection<
+  keyof EffectiveRequirementsOf<F>,
+  { readonly requirements: EffectiveRequirementsOf<F> }
+>
+type DependenciesOption<F extends Flow> = RequiredSection<
+  keyof EffectiveDependenciesOf<F>,
+  { readonly dependencies: EffectiveDependenciesOf<F> }
+>
+type SignalsOption<F extends Flow> = keyof EffectiveSignalsOf<F> extends never
+  ? { readonly signals?: never }
+  : EffectiveSignalsOf<F> extends SignalDefinitions
+    ? { readonly signals: BoundarySignalHandlers<EffectiveSignalsOf<F>> }
+    : { readonly signals?: never }
+
+export type FlowRunOptions<F extends Flow> = {
+  readonly worker?: Worker
+  readonly id?: string
+  readonly metadata?: RunMetadata
+} & RequirementsOption<F> &
+  DependenciesOption<F> &
+  SignalsOption<F>
+
+export type FlowRunOptionArgs<F extends Flow> = keyof EffectiveRequirementsOf<F> extends never
+  ? keyof EffectiveDependenciesOf<F> extends never
+    ? keyof EffectiveSignalsOf<F> extends never
+      ? readonly [options?: FlowRunOptions<F>]
+      : readonly [options: FlowRunOptions<F>]
+    : readonly [options: FlowRunOptions<F>]
+  : readonly [options: FlowRunOptions<F>]
+
 export interface FlowImplementation<F extends Flow = Flow> {
   readonly handler: FlowHandler<F>
+  run(
+    params: ParamsOf<F>,
+    ...options: FlowRunOptionArgs<F>
+  ): FlowRun<EffectiveErrorsOf<F>, ResultOf<F>>
 }
 
 export type FlowExecutionResult<F extends Flow> =

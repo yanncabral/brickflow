@@ -16,8 +16,9 @@ describe('Layer', () => {
     const application = new Layer('application', { users })
 
     expect(users.id).toBe('users')
-    expect(users.getUser).toBe(getUser)
-    expect(application.users).toBe(users)
+    expect(users.getUser).not.toBe(getUser)
+    expect(users.getUser.handler).toBe(getUser.handler)
+    expect(application.users).not.toBe(users)
     expect(Object.isFrozen(users)).toBe(true)
     expect(flattenLayer(application).map(({ id }) => id)).toEqual(['application.users.getUser'])
     expect(lookupLayer(application, 'application.users.getUser')).toBe(getUser)

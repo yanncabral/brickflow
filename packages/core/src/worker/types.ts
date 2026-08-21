@@ -1,14 +1,6 @@
-import type { Engine } from '../engine/engine'
 import type { EngineStatus } from '../engine/types'
 import type { Flow } from '../flow/contract'
-import type {
-  EffectiveErrorsOf,
-  EffectiveSignalsOf,
-  FlowImplementation,
-  ParamsOf,
-  ResultOf,
-  SignalsOf
-} from '../flow/types'
+import type { EffectiveSignalsOf, FlowImplementation, SignalsOf } from '../flow/types'
 import type { AnyLayer, LayerEntries, LayerEntriesOf } from '../layer/types'
 import type {
   MatchedError,
@@ -17,12 +9,6 @@ import type {
   SupportedPattern
 } from '../matching/types'
 import type { BoundarySignalHandlers, SignalDefinitions } from '../signal/types'
-
-export interface WorkerOptions<Layer extends AnyLayer = AnyLayer> {
-  readonly engine: Engine
-  /** Workers require a Layer so roots, providers, and durable IDs are sound. */
-  readonly layer: Layer
-}
 
 export type RunMetadata = Readonly<Record<string, unknown>>
 
@@ -67,7 +53,7 @@ type SignalsForEntries<Entries extends LayerEntries, Included> = {
     : Key]: EntrySignalHandlers<Entries[Key], Included>
 }
 
-type LayerSignalHandlers<Layer extends AnyLayer, F extends Flow> = {
+export type LayerSignalHandlers<Layer extends AnyLayer, F extends Flow> = {
   readonly [Id in Layer['id']]: SignalsForEntries<
     LayerEntriesOf<Layer>,
     GraphImplementations<LayerEntriesOf<Layer>[keyof LayerEntriesOf<Layer>], F>
@@ -127,19 +113,3 @@ export type FlowRun<Error, InitialSuccess, LocalResult = InitialSuccess, Remaini
 ] extends [never]
   ? CompleteFlowRun<Error, InitialSuccess, LocalResult>
   : IncompleteFlowRun<Error, InitialSuccess, LocalResult, RemainingError>
-
-export interface WorkerState<Layer extends AnyLayer = AnyLayer> {
-  readonly engine: Engine
-  readonly layer: Layer
-  run<F extends Flow>(
-    root: FlowImplementation<F>,
-    params: ParamsOf<F>,
-    ...options: keyof EffectiveSignalsOf<F> extends never
-      ? readonly [options?: WorkerRunOptions<Layer, F>]
-      : readonly [options: WorkerRunOptions<Layer, F>]
-  ): FlowRun<EffectiveErrorsOf<F>, ResultOf<F>>
-}
-
-export interface WorkerConstructor {
-  new <Layer extends AnyLayer>(options: WorkerOptions<Layer>): WorkerState<Layer>
-}

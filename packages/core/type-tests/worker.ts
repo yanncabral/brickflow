@@ -1,4 +1,4 @@
-import { type Engine, type Flow, type FlowRun, flow, Layer, P, Worker } from '../src/index'
+import { type Engine, type Flow, type FlowRun, flow, Layer, LegacyWorker, P } from '../src/index'
 
 type Failure = 'missing' | { type: 'unavailable'; retryAfter: number }
 
@@ -21,10 +21,10 @@ const layer = new Layer('application', { root, quiet }).provide({
   database: { find: (id: string) => id }
 })
 declare const engine: Engine
-const worker = new Worker({ engine, layer })
+const worker = new LegacyWorker({ engine, layer })
 
 // @ts-expect-error Worker requires a Layer
-new Worker({ engine })
+new LegacyWorker({ engine })
 // @ts-expect-error signal options are required when effective root signals exist
 worker.run(root, { id: '1' })
 // @ts-expect-error boundary signal handlers must be total
@@ -101,7 +101,7 @@ const parentSignal = flow<ParentSignalFlow>(async (_p, _r, { childSignal }) =>
 )
 const unrelatedSignal = flow<UnrelatedSignalFlow>(() => 'unrelated')
 const signalLayer = new Layer('signals', { parentSignal, childSignal, unrelatedSignal })
-const signalWorker = new Worker({ engine, layer: signalLayer })
+const signalWorker = new LegacyWorker({ engine, layer: signalLayer })
 // @ts-expect-error recursive dependency signals require boundary callback
 signalWorker.run(parentSignal, undefined)
 signalWorker.run(parentSignal, undefined, {

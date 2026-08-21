@@ -3,10 +3,36 @@ import type {
   EngineExecutionRequest,
   EngineExecutionResult,
   EngineStatus
-} from '@flow/core'
-import { LocalRunCancelledError } from './errors'
+} from '../engine/types'
+import type { Worker } from './contract'
 
-export class LocalRun<Result, Failure> implements EngineExecutionHandle<Result, Failure> {
+export class LocalRunCancelledError extends Error {
+  readonly runId: string
+  readonly reason: string | undefined
+
+  constructor(runId: string, reason?: string) {
+    super(
+      reason === undefined
+        ? `Local run "${runId}" was cancelled`
+        : `Local run "${runId}" was cancelled: ${reason}`
+    )
+    this.name = 'LocalRunCancelledError'
+    this.runId = runId
+    this.reason = reason
+  }
+}
+
+export class DuplicateLocalRunIdError extends Error {
+  readonly runId: string
+
+  constructor(runId: string) {
+    super(`Local run ID "${runId}" already exists`)
+    this.name = 'DuplicateLocalRunIdError'
+    this.runId = runId
+  }
+}
+
+class LocalRun<Result, Failure> implements EngineExecutionHandle<Result, Failure> {
   readonly id: string
   readonly result: Promise<EngineExecutionResult<Result, Failure>>
   private currentStatus: EngineStatus = 'queued'
@@ -15,7 +41,7 @@ export class LocalRun<Result, Failure> implements EngineExecutionHandle<Result, 
 
   constructor(private readonly request: EngineExecutionRequest<Result, Failure>) {
     this.id = request.id
-    this.result = new Promise<EngineExecutionResult<Result, Failure>>((resolve, reject) => {
+    this.result = new Promise((resolve, reject) => {
       this.rejectResult = reject
       queueMicrotask(async () => {
         if (this.cancellation !== undefined) return
@@ -51,10 +77,22 @@ export class LocalRun<Result, Failure> implements EngineExecutionHandle<Result, 
     this.rejectResult(this.cancellation)
   }
 
-  async signal(
-    signal: Parameters<EngineExecutionRequest<Result, Failure>['signal']>[0]
-  ): Promise<unknown> {
+  async signal(signal: Parameters<EngineExecutionRequest<Result, Failure>['signal']>[0]) {
     if (this.cancellation !== undefined) throw this.cancellation
     return this.request.signal(signal)
   }
 }
+
+export class LocalWorker implements Worker {
+  private readonly runIds = new Set<string>()
+
+  start<Result, Failure>(
+    request: EngineExecutionRequest<Result, Failure>
+  ): EngineExecutionHandle<Result, Failure> {
+    if (this.runIds.has(request.id)) throw new DuplicateLocalRunIdError(request.id)
+    this.runIds.add(request.id)
+    return new LocalRun(request)
+  }
+}
+
+export const localWorker: Worker = new LocalWorker()
