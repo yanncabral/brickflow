@@ -53,11 +53,11 @@ export function lookupLayer(
   return flattenLayer(layer).find(({ id }) => id === durableId)?.implementation
 }
 
-export function resolveLayerDependency(
+export function findLayerDependency(
   layer: AnyLayer,
   caller: FlattenedLayerEntry,
   alias: string
-): FlattenedLayerEntry {
+): FlattenedLayerEntry | undefined {
   const entries = flattenLayer(layer)
   const inCallerScope = entries.filter(
     (entry) => entry.key === alias && entry.layerPath.join('.') === caller.layerPath.join('.')
@@ -65,9 +65,6 @@ export function resolveLayerDependency(
   const matches =
     inCallerScope.length > 0 ? inCallerScope : entries.filter((entry) => entry.key === alias)
 
-  if (matches.length === 0) {
-    throw new Error(`Missing dependency Flow entry "${alias}" in the configured Layer`)
-  }
   if (matches.length > 1) {
     throw new Error(
       `Ambiguous dependency Flow entry "${alias}" resolved to multiple durable paths: ${matches
@@ -75,7 +72,17 @@ export function resolveLayerDependency(
         .join(', ')}`
     )
   }
-  return matches[0] as FlattenedLayerEntry
+  return matches[0]
+}
+
+export function resolveLayerDependency(
+  layer: AnyLayer,
+  caller: FlattenedLayerEntry,
+  alias: string
+): FlattenedLayerEntry {
+  const match = findLayerDependency(layer, caller, alias)
+  if (!match) throw new Error(`Missing dependency Flow entry "${alias}" in the configured Layer`)
+  return match
 }
 
 export function effectiveLayerProviders(layer: AnyLayer): Readonly<Record<string, unknown>> {

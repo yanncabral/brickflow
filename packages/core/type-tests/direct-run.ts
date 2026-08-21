@@ -33,6 +33,12 @@ interface ConfiguredFlow extends Flow {
   depends: { child: ChildFlow }
 }
 
+interface SignalledFlow extends Flow {
+  params: { id: string }
+  result: boolean
+  signals: { approve: { request: { id: string }; response: boolean } }
+}
+
 const plain = flow<PlainFlow>(({ value }) => value)
 const grandchild = flow<GrandchildFlow>(({ id }, { logger }) => {
   logger.log(id)
@@ -43,6 +49,9 @@ const child = flow<ChildFlow>(async ({ id }, { repository }, dependencies) =>
 )
 const configured = flow<ConfiguredFlow>(async ({ id }, _requirements, dependencies) =>
   dependencies.child({ id })
+)
+const signalled = flow<SignalledFlow>(async ({ id }, _requirements, _dependencies, tools) =>
+  tools.signals.approve({ id })
 )
 
 const repository = { find: (id: string) => id }
@@ -90,9 +99,37 @@ const partial = new Layer('configured', { configured, child, grandchild }).provi
 partial.configured.run({ id: 'ada' })
 partial.configured.run({ id: 'ada' }, { requirements: { logger } })
 
+const missingGrandchild = new Layer('missing-grandchild', { configured, child }).provide({
+  repository,
+  logger
+})
+// @ts-expect-error grandchild remains unresolved
+missingGrandchild.configured.run({ id: 'ada' })
+missingGrandchild.configured.run({ id: 'ada' }, { dependencies: { grandchild } })
+
+const nestedProvider = new Layer('nested-provider', { child, grandchild }).provide({
+  repository,
+  logger
+})
+const providerApp = new Layer('provider-app', { configured, nestedProvider })
+const nestedProviderResult: string = await providerApp.configured.run({ id: 'ada' })
+void nestedProviderResult
+
 const complete = partial.provide({ logger })
 const boundResult: string = await complete.configured.run({ id: 'ada' })
 void boundResult
+
+signalled.run({ id: 'ada' }, { signals: { approve: ({ id }) => id === 'ada' } })
+// @ts-expect-error direct signal handlers are required
+signalled.run({ id: 'ada' })
+
+const signalledLayer = new Layer('signals', { signalled })
+signalledLayer.signalled.run(
+  { id: 'ada' },
+  { signals: { signals: { signalled: { approve: ({ id }) => id === 'ada' } } } }
+)
+// @ts-expect-error bound signal handlers are required
+signalledLayer.signalled.run({ id: 'ada' })
 
 const app = new Layer('app', { nested: complete })
 const nestedResult: string = await app.nested.configured.run({ id: 'ada' })

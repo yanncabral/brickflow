@@ -7,8 +7,7 @@ Experimental TypeScript library for typed domain failures, structural dependency
 Declare a structural interface, then create implementations with `flow<F>(handler)`:
 
 ```ts
-import { type Flow, flow, Layer, Worker } from '@flow/core'
-import { LocalEngine } from '@flow/engine-local'
+import { type Flow, flow, Layer } from '@flow/core'
 
 interface GetUserFlow extends Flow {
   params: { id: string }
@@ -25,7 +24,9 @@ const getUser = flow<GetUserFlow>(
 )
 
 const users = new Layer('users', { getUser }).provide({ userRepository })
-const worker = new Worker({ engine: new LocalEngine(), layer: users })
+const user = await users.getUser
+  .run({ id: 'ada' })
+  .with('user-not-found', () => ({ id: 'anonymous', name: 'Anonymous' }))
 ```
 
 `errors`, `requires`, `depends`, and `signals` may be omitted when empty. Multiple `flow<GetUserFlow>(...)` values can implement the same interface.
@@ -48,9 +49,8 @@ bun run clean
 
 ## Workspace packages
 
-- `@flow/core`: engine-neutral contracts and execution semantics.
-- `@flow/engine-local`: in-process engine.
-- `@flow/engine-openworkflow`: OpenWorkflow durable engine adapter.
+- `@flow/core`: engine-neutral contracts, direct execution, Layers, and the default in-process Worker.
+- `@flow/engine-openworkflow`: OpenWorkflow durable Worker adapter.
 - `@flow/testing`: test utilities and compile-time fixtures.
 - `examples/basic`: minimal API usage.
 - `examples/code-agent`: durable coding-agent scenario.

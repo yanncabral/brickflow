@@ -1,6 +1,6 @@
 import type { EngineStatus } from '../engine/types'
 import type { Flow } from '../flow/contract'
-import type { EffectiveSignalsOf, FlowImplementation, SignalsOf } from '../flow/types'
+import type { FlowImplementation, SignalsOf } from '../flow/types'
 import type { AnyLayer, LayerEntries, LayerEntriesOf } from '../layer/types'
 import type {
   MatchedError,
@@ -53,24 +53,12 @@ type SignalsForEntries<Entries extends LayerEntries, Included> = {
     : Key]: EntrySignalHandlers<Entries[Key], Included>
 }
 
-export type LayerSignalHandlers<Layer extends AnyLayer, F extends Flow> = {
+export type LayerSignalHandlers<Layer extends Pick<AnyLayer, 'id' | 'entries'>, F extends Flow> = {
   readonly [Id in Layer['id']]: SignalsForEntries<
     LayerEntriesOf<Layer>,
     GraphImplementations<LayerEntriesOf<Layer>[keyof LayerEntriesOf<Layer>], F>
   >
 }
-
-type SignalOptions<
-  Layer extends AnyLayer,
-  F extends Flow
-> = keyof EffectiveSignalsOf<F> extends never
-  ? { readonly signals?: never }
-  : { readonly signals: LayerSignalHandlers<Layer, F> }
-
-export type WorkerRunOptions<Layer extends AnyLayer, F extends Flow> = {
-  readonly id?: string
-  readonly metadata?: RunMetadata
-} & SignalOptions<Layer, F>
 
 export interface FlowRunControls {
   readonly id: string

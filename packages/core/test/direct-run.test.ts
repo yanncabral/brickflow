@@ -3,10 +3,12 @@ import {
   DuplicateLocalRunIdError,
   type EngineExecutionHandle,
   type EngineExecutionRequest,
+  ExecutionContext,
   type Flow,
   flow,
   Layer,
   LocalRunCancelledError,
+  LocalWorker,
   P,
   type Worker
 } from '../src/index'
@@ -123,9 +125,9 @@ describe('direct Flow execution', () => {
 
     expect(worker.requests[0]).toMatchObject({
       id: 'custom-id',
-      flowId: 'direct',
       metadata: { tenant: 'acme' }
     })
+    expect(worker.requests[0]?.flowId).toBeUndefined()
   })
 })
 
@@ -164,9 +166,126 @@ describe('Layer-bound Flow execution', () => {
       .with(P._, () => 'fallback')
       .then((value) => expect(value).toBe('hello Second'))
   })
+
+  test('accepts unresolved dependency aliases and gives scoped Layer entries precedence', async () => {
+    const layerChild = flow<ChildFlow>(async ({ id }, { repository }, { grandchild }) =>
+      grandchild({ id: `layer-${repository.find(id)}` })
+    )
+    const bound = new Layer('bound', { parent, child: layerChild }).provide({ repository, logger })
+
+    await bound.parent
+      .run({ id: 'ada' }, { dependencies: { grandchild } })
+      .with(P._, () => 'fallback')
+      .then((value) => expect(value).toBe('hello layer-Ada'))
+  })
 })
 
 describe('core local Worker behavior', () => {
+  function localRequest<Result, Failure>(
+    overrides: Partial<EngineExecutionRequest<Result, Failure>> &
+      Pick<EngineExecutionRequest<Result, Failure>, 'id' | 'execute'>
+  ): EngineExecutionRequest<Result, Failure> {
+    return {
+      params: undefined,
+      context: new ExecutionContext({ callId: `call-${overrides.id}` }),
+      signal: async ({ request }) => request,
+      ...overrides
+    }
+  }
+
+  test('covers queued, running, completed, typed failure, defect, and independent IDs', async () => {
+    let resolvePending!: (value: { ok: true; value: string }) => void
+    const pending = new Promise<{ ok: true; value: string }>((resolve) => {
+      resolvePending = resolve
+    })
+    const worker = new LocalWorker()
+    const success = worker.start(
+      localRequest({ id: 'success', execute: async () => ({ ok: true, value: 1 }) })
+    )
+    const running = worker.start(localRequest({ id: 'running', execute: () => pending }))
+    const failure = { code: 'denied' as const }
+    const failed = worker.start(
+      localRequest({ id: 'failed', execute: async () => ({ ok: false, error: failure }) })
+    )
+    const defect = new Error('boom')
+    const defective = worker.start(
+      localRequest({
+        id: 'defective',
+        execute: async () => {
+          throw defect
+        }
+      })
+    )
+
+    await expect(success.status()).resolves.toBe('queued')
+    await Promise.resolve()
+    await expect(running.status()).resolves.toBe('running')
+    await expect(success.result).resolves.toEqual({ ok: true, value: 1 })
+    await expect(success.status()).resolves.toBe('completed')
+    await expect(failed.result).resolves.toEqual({ ok: false, error: failure })
+    await expect(failed.status()).resolves.toBe('failed')
+    await expect(defective.result).rejects.toBe(defect)
+    await expect(defective.status()).resolves.toBe('failed')
+    resolvePending({ ok: true, value: 'done' })
+    await expect(running.result).resolves.toEqual({ ok: true, value: 'done' })
+  })
+
+  test('keeps cancellation idempotent through late completion and rejects later signals', async () => {
+    let resolvePending!: (value: { ok: true; value: string }) => void
+    const pending = new Promise<{ ok: true; value: string }>((resolve) => {
+      resolvePending = resolve
+    })
+    const handle = new LocalWorker().start(
+      localRequest({ id: 'cancel-race', execute: () => pending })
+    )
+    const result = handle.result.catch((error: unknown) => error)
+
+    await Promise.resolve()
+    await handle.cancel('stop')
+    await handle.cancel('ignored')
+    await expect(handle.status()).resolves.toBe('cancelled')
+    expect(await result).toEqual(
+      expect.objectContaining({
+        name: 'LocalRunCancelledError',
+        runId: 'cancel-race',
+        reason: 'stop'
+      })
+    )
+    await expect(handle.signal({ name: 'approve', request: true })).rejects.toBeInstanceOf(
+      LocalRunCancelledError
+    )
+    resolvePending({ ok: true, value: 'late' })
+    await Promise.resolve()
+    await expect(handle.status()).resolves.toBe('cancelled')
+  })
+
+  test('delegates signals while active and rejects duplicate IDs after completion', async () => {
+    const calls: unknown[] = []
+    const worker = new LocalWorker()
+    const handle = worker.start(
+      localRequest({
+        id: 'duplicate-after-completion',
+        execute: async () => ({ ok: true, value: undefined }),
+        signal: async (call) => {
+          calls.push(call)
+          return 'approved'
+        }
+      })
+    )
+
+    await expect(handle.signal({ name: 'approve', request: { id: 1 } })).resolves.toBe('approved')
+    expect(calls).toEqual([{ name: 'approve', request: { id: 1 } }])
+    await handle.result
+    expect(() =>
+      worker.start(
+        localRequest({
+          id: 'duplicate-after-completion',
+          execute: async () => ({ ok: true, value: undefined })
+        })
+      )
+    ).toThrow(DuplicateLocalRunIdError)
+  })
+
   test('reports status, rejects duplicate explicit IDs, and supports cancellation', async () => {
     const run = plain.run({ value: 1 }, { id: 'local-status' })
     expect(await run.status()).toBe('queued')

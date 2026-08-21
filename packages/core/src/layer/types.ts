@@ -169,49 +169,111 @@ type ValidateDependencyAliases<
       : Entries[Key]
 }
 
-type BoundFlowRunOptions<F extends Flow, Provided extends Providers> = Omit<
-  FlowRunOptions<F>,
-  'requirements' | 'dependencies' | 'signals'
-> &
+type ProviderUnion<Entries extends LayerEntries> = {
+  readonly [Key in keyof Entries]: Entries[Key] extends Layer<
+    string,
+    infer NestedEntries,
+    infer NestedProvided
+  >
+    ? EffectiveLayerProviders<NestedEntries, NestedProvided>
+    : Record<never, never>
+}[keyof Entries]
+
+type UnionToIntersection<Value> = (Value extends Value ? (value: Value) => void : never) extends (
+  value: infer Intersection
+) => void
+  ? Intersection
+  : never
+
+export type EffectiveLayerProviders<
+  Entries extends LayerEntries,
+  Provided extends Providers
+> = Provided & Omit<UnionToIntersection<ProviderUnion<Entries>>, keyof Provided>
+
+type ResolvableDependencyAliases<
+  RootEntries extends LayerEntries,
+  ScopeEntries extends LayerEntries,
+  F extends Flow
+> = {
+  readonly [Alias in keyof EffectiveDependenciesOf<F>]: [
+    ResolvedFlowEntry<RootEntries, ScopeEntries, Alias>
+  ] extends [never]
+    ? never
+    : Alias
+}[keyof EffectiveDependenciesOf<F>]
+
+type UnresolvedDependencies<
+  RootEntries extends LayerEntries,
+  ScopeEntries extends LayerEntries,
+  F extends Flow
+> = Omit<EffectiveDependenciesOf<F>, ResolvableDependencyAliases<RootEntries, ScopeEntries, F>>
+
+type BoundFlowRunOptions<
+  F extends Flow,
+  RootId extends string,
+  RootEntries extends LayerEntries,
+  ScopeEntries extends LayerEntries,
+  Provided extends Providers
+> = Omit<FlowRunOptions<F>, 'requirements' | 'dependencies' | 'signals'> &
   (keyof Omit<EffectiveRequirementsOf<F>, keyof Provided> extends never
     ? { readonly requirements?: never }
     : { readonly requirements: Omit<EffectiveRequirementsOf<F>, keyof Provided> }) &
-  (keyof EffectiveDependenciesOf<F> extends never
+  (keyof UnresolvedDependencies<RootEntries, ScopeEntries, F> extends never
     ? { readonly dependencies?: never }
-    : Record<never, never>) &
+    : { readonly dependencies: UnresolvedDependencies<RootEntries, ScopeEntries, F> }) &
   (keyof EffectiveSignalsOf<F> extends never
     ? { readonly signals?: never }
-    : { readonly signals: LayerSignalHandlers<LayerState<string, LayerEntries, Provided>, F> })
+    : {
+        readonly signals: LayerSignalHandlers<LayerState<RootId, RootEntries, Provided>, F>
+      })
 
-type BoundFlowRunOptionArgs<F extends Flow, Provided extends Providers> = keyof Omit<
-  EffectiveRequirementsOf<F>,
-  keyof Provided
-> extends never
-  ? keyof EffectiveSignalsOf<F> extends never
-    ? readonly [options?: BoundFlowRunOptions<F, Provided>]
-    : readonly [options: BoundFlowRunOptions<F, Provided>]
-  : readonly [options: BoundFlowRunOptions<F, Provided>]
+type BoundFlowRunOptionArgs<
+  F extends Flow,
+  RootId extends string,
+  RootEntries extends LayerEntries,
+  ScopeEntries extends LayerEntries,
+  Provided extends Providers
+> = keyof Omit<EffectiveRequirementsOf<F>, keyof Provided> extends never
+  ? keyof UnresolvedDependencies<RootEntries, ScopeEntries, F> extends never
+    ? keyof EffectiveSignalsOf<F> extends never
+      ? readonly [options?: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided>]
+      : readonly [options: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided>]
+    : readonly [options: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided>]
+  : readonly [options: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided>]
 
-export type BoundFlow<F extends Flow, Provided extends Providers> = FlowImplementation<F> & {
+export type BoundFlow<
+  F extends Flow,
+  RootId extends string,
+  RootEntries extends LayerEntries,
+  ScopeEntries extends LayerEntries,
+  Provided extends Providers
+> = FlowImplementation<F> & {
   run(
     params: ParamsOf<F>,
-    ...options: BoundFlowRunOptionArgs<F, Provided>
+    ...options: BoundFlowRunOptionArgs<F, RootId, RootEntries, ScopeEntries, Provided>
   ): FlowRun<EffectiveErrorsOf<F>, ResultOf<F>>
 }
 
-type BoundEntries<Entries extends LayerEntries, Provided extends Providers> = {
+type BoundEntries<
+  RootId extends string,
+  RootEntries extends LayerEntries,
+  Entries extends LayerEntries,
+  Provided extends Providers
+> = {
   readonly [Key in keyof Entries]: Entries[Key] extends FlowImplementation<infer F extends Flow>
-    ? BoundFlow<F, Provided>
-    : Entries[Key] extends Layer<infer Id, infer Nested, infer NestedProvided>
-      ? BoundLayer<Id, Nested, Provided & NestedProvided>
+    ? BoundFlow<F, RootId, RootEntries, Entries, Provided>
+    : Entries[Key] extends Layer<infer Id, infer Nested, infer _NestedProvided>
+      ? BoundLayer<Id, Nested, Provided, RootEntries, RootId>
       : never
 }
 
 export type BoundLayer<
   Id extends string,
   Entries extends LayerEntries,
-  Provided extends Providers
-> = LayerState<Id, Entries, Provided> & BoundEntries<Entries, Provided>
+  Provided extends Providers,
+  RootEntries extends LayerEntries = Entries,
+  RootId extends string = Id
+> = LayerState<Id, Entries, Provided> & BoundEntries<RootId, RootEntries, Entries, Provided>
 
 export interface LayerState<
   Id extends string = string,
@@ -223,7 +285,7 @@ export interface LayerState<
   readonly providers: Readonly<Provided>
   provide<const Values extends Partial<Omit<RequirementsFromEntries<Entries>, keyof Provided>>>(
     values: Values
-  ): BoundLayer<Id, Entries, Provided & Values>
+  ): BoundLayer<Id, Entries, EffectiveLayerProviders<Entries, Provided & Values>>
   override<
     const Values extends Partial<
       Pick<
@@ -231,14 +293,20 @@ export interface LayerState<
         keyof Provided & keyof RequirementsFromEntries<Entries>
       >
     >
-  >(values: Values): BoundLayer<Id, Entries, Omit<Provided, keyof Values> & Values>
+  >(
+    values: Values
+  ): BoundLayer<
+    Id,
+    Entries,
+    EffectiveLayerProviders<Entries, Omit<Provided, keyof Values> & Values>
+  >
 }
 
 export type Layer<
   Id extends string = string,
   Entries extends LayerEntries = LayerEntries,
   Provided extends Providers = Record<never, never>
-> = BoundLayer<Id, Entries, Provided>
+> = BoundLayer<Id, Entries, EffectiveLayerProviders<Entries, Provided>>
 
 export interface LayerConstructor {
   new <const Id extends string, const Entries extends LayerEntries>(

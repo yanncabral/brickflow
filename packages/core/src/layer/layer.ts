@@ -3,10 +3,10 @@ import type { FlowImplementation } from '../flow/types'
 import { executeFlow } from '../worker/execution'
 import {
   effectiveLayerProviders,
+  findLayerDependency,
   flattenLayer,
   isLayer,
-  LayerRuntime,
-  resolveLayerDependency
+  LayerRuntime
 } from './composition'
 import { addProviders, overrideProviders } from './provide'
 import type {
@@ -87,6 +87,7 @@ class LayerImplementation<
         params: unknown,
         options?: {
           readonly requirements?: Readonly<Record<string, unknown>>
+          readonly dependencies?: Readonly<Record<string, FlowImplementation>>
           readonly signals?: Readonly<Record<string, unknown>>
           readonly worker?: unknown
           readonly id?: string
@@ -101,16 +102,25 @@ class LayerImplementation<
             (idSuffix === undefined || candidate.id.endsWith(idSuffix))
         ) as FlattenedLayerEntry | undefined
         if (!root) throw new Error(`Bound Flow entry not found: ${key}`)
+        const suppliedDependencies = Object.entries(options?.dependencies ?? {}).map(
+          ([dependencyKey, implementation]) =>
+            Object.freeze({ id: dependencyKey, key: dependencyKey, implementation })
+        )
         return executeFlow({
           root,
-          entries,
+          entries: [...entries, ...suppliedDependencies],
           params,
           providers: Object.freeze({
             ...effectiveLayerProviders(layer),
             ...((options?.requirements as Readonly<Record<string, unknown>> | undefined) ?? {})
           }),
-          resolveDependency: (caller, alias) =>
-            resolveLayerDependency(layer, caller as FlattenedLayerEntry, alias),
+          resolveDependency: (caller, alias) => {
+            const layerEntry = findLayerDependency(layer, caller as FlattenedLayerEntry, alias)
+            if (layerEntry) return layerEntry
+            const supplied = suppliedDependencies.find((candidate) => candidate.key === alias)
+            if (supplied) return supplied
+            throw new Error(`Missing dependency Flow entry "${alias}" in the configured Layer`)
+          },
           ...(options?.signals
             ? { signals: options.signals as Readonly<Record<string, unknown>> }
             : {}),

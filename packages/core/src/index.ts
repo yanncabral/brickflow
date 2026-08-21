@@ -1,6 +1,4 @@
 export { P } from 'ts-pattern'
-export type { Engine } from './engine/engine'
-export { isEngine } from './engine/engine'
 export type { ExecutionContextOptions } from './engine/execution-context'
 export { ExecutionContext } from './engine/execution-context'
 export type {
@@ -81,12 +79,5 @@ export type {
   FlowRun,
   FlowRunControls,
   IncompleteFlowRun,
-  RunMetadata,
-  WorkerRunOptions
+  RunMetadata
 } from './worker/types'
-export type {
-  LegacyWorkerConstructor,
-  LegacyWorkerOptions,
-  LegacyWorkerState
-} from './worker/worker'
-export { LegacyWorker } from './worker/worker'

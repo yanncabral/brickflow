@@ -23,7 +23,7 @@ import { createFlowRun } from './run'
 import type { FlowRun, RunMetadata } from './types'
 
 export interface ExecutionEntry {
-  readonly id: string
+  readonly id?: string
   readonly key: string
   readonly implementation: AnyFlowImplementation
 }
@@ -66,7 +66,7 @@ async function executeResolvedFlow<F extends Flow>(
         dependencyParams: unknown,
         callOptions?: { readonly signals?: Readonly<Record<string, unknown>> }
       ) => {
-        const dependencyId = dependencyEntry.id.split('.')
+        const dependencyId = dependencyEntry.id?.split('.') ?? [dependencyEntry.key]
         const parentSignalHandlers = context.signalHandlers
         const localHandlers = callOptions?.signals
           ? createSignalHandlerChain(
@@ -82,7 +82,7 @@ async function executeResolvedFlow<F extends Flow>(
           : parentSignalHandlers
         const dependencyContext = new ExecutionContext({
           layerPath: dependencyId.slice(0, -1),
-          flowPath: [dependencyId.at(-1) ?? dependencyEntry.id],
+          flowPath: [dependencyId.at(-1) ?? dependencyEntry.key],
           callId: context.callId,
           providers: context.providers,
           ...(localHandlers ? { signalHandlers: localHandlers } : {})
@@ -118,17 +118,17 @@ export function executeFlow<F extends Flow>(
   const boundary = options.directSignals
     ? directSignalChain(handlers)
     : createSignalHandlerChain(flattenNamespacedSignalHandlers(handlers), undefined, true)
-  const rootId = options.root.id.split('.')
+  const rootId = options.root.id?.split('.') ?? []
   const context = new ExecutionContext({
     layerPath: rootId.slice(0, -1),
-    flowPath: [rootId.at(-1) ?? options.root.id],
+    flowPath: rootId.length > 0 ? [rootId.at(-1) as string] : [],
     callId: id,
     providers: options.providers,
     signalHandlers: boundary
   })
   const request: EngineExecutionRequest<ResultOf<F>, EffectiveErrorsOf<F>> = {
     id,
-    flowId: options.root.id,
+    ...(options.root.id ? { flowId: options.root.id } : {}),
     params: options.params,
     ...(options.metadata ? { metadata: options.metadata } : {}),
     context,
@@ -153,7 +153,7 @@ export function runDirectFlow<F extends Flow>(
   const dependencyEntries = Object.entries(options?.dependencies ?? {}).map(([key, dependency]) =>
     Object.freeze({ id: key, key, implementation: dependency })
   )
-  const root = Object.freeze({ id: 'direct', key: 'direct', implementation })
+  const root = Object.freeze({ key: 'direct', implementation })
   return executeFlow({
     root,
     entries: [root, ...dependencyEntries],
