@@ -167,6 +167,84 @@ describe('Layer-bound Flow execution', () => {
       .then((value) => expect(value).toBe('hello Second'))
   })
 
+  test('resolves transitive dependency aliases in each caller Layer scope', async () => {
+    interface RepositoryFlow extends Flow {
+      params: undefined
+      result: string
+    }
+    interface CheckoutFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { repository: RepositoryFlow }
+    }
+    interface PlaceOrderFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { checkout: CheckoutFlow }
+    }
+
+    const checkout = flow<CheckoutFlow>(async (_params, _requirements, dependencies) =>
+      dependencies.repository(undefined)
+    )
+    const placeOrder = flow<PlaceOrderFlow>(async (_params, _requirements, dependencies) =>
+      dependencies.checkout(undefined)
+    )
+    const checkoutLayer = new Layer('checkout', {
+      checkout,
+      repository: flow<RepositoryFlow>(() => 'checkout')
+    })
+    const reportingLayer = new Layer('reporting', {
+      repository: flow<RepositoryFlow>(() => 'reporting')
+    })
+    const app = new Layer('app', { placeOrder, checkout: checkoutLayer, reporting: reportingLayer })
+
+    await expect(Promise.resolve(app.placeOrder.run(undefined))).resolves.toBe('checkout')
+  })
+
+  test('uses a supplied dependency when transitive global Layer matches are ambiguous', async () => {
+    interface RepositoryFlow extends Flow {
+      params: undefined
+      result: string
+    }
+    interface CheckoutFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { repository: RepositoryFlow }
+    }
+    interface PlaceOrderFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { checkout: CheckoutFlow }
+    }
+
+    const checkout = flow<CheckoutFlow>(async (_params, _requirements, dependencies) =>
+      dependencies.repository(undefined)
+    )
+    const placeOrder = flow<PlaceOrderFlow>(async (_params, _requirements, dependencies) =>
+      dependencies.checkout(undefined)
+    )
+    const checkoutLayer = new Layer('checkout', { checkout })
+    const reportingLayer = new Layer('reporting', {
+      repository: flow<RepositoryFlow>(() => 'reporting')
+    })
+    const inventoryLayer = new Layer('inventory', {
+      repository: flow<RepositoryFlow>(() => 'inventory')
+    })
+    const suppliedRepository = flow<RepositoryFlow>(() => 'supplied')
+    const app = new Layer('app', {
+      placeOrder,
+      checkout: checkoutLayer,
+      reporting: reportingLayer,
+      inventory: inventoryLayer
+    })
+
+    await expect(
+      Promise.resolve(
+        app.placeOrder.run(undefined, { dependencies: { repository: suppliedRepository } })
+      )
+    ).resolves.toBe('supplied')
+  })
+
   test('accepts unresolved dependency aliases and gives scoped Layer entries precedence', async () => {
     const layerChild = flow<ChildFlow>(async ({ id }, { repository }, { grandchild }) =>
       grandchild({ id: `layer-${repository.find(id)}` })

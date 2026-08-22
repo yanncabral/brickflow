@@ -114,7 +114,10 @@ type DirectFlowEntryForAlias<
   Alias extends PropertyKey
 > = Alias extends keyof Entries
   ? Entries[Alias] extends FlowImplementation<infer _F extends Flow>
-    ? Entries[Alias]
+    ? {
+        readonly implementation: Entries[Alias]
+        readonly scope: Entries
+      }
     : never
   : never
 
@@ -128,6 +131,7 @@ type FlattenedFlowEntryForAlias<
       ? {
           readonly path: readonly [...Path, Key]
           readonly implementation: Entries[Key]
+          readonly scope: Entries
         }
       : never
     : Entries[Key] extends { readonly entries: infer Nested extends LayerEntries }
@@ -145,13 +149,7 @@ type UniqueGlobalFlowEntryForAlias<
   RootEntries extends LayerEntries,
   Alias extends PropertyKey,
   Match = FlattenedFlowEntryForAlias<RootEntries, Alias>
-> = [Match] extends [never]
-  ? never
-  : true extends IsUnion<Match>
-    ? never
-    : Match extends { readonly implementation: infer Entry }
-      ? Entry
-      : never
+> = [Match] extends [never] ? never : true extends IsUnion<Match> ? never : Match
 
 type ResolvedFlowEntry<
   RootEntries extends LayerEntries,
@@ -169,11 +167,13 @@ type HasIncompatibleDependencyAlias<
     ResolvedFlowEntry<RootEntries, ScopeEntries, Alias>
   ] extends [never]
     ? false
-    : FlowOfEntry<
-          ResolvedFlowEntry<RootEntries, ScopeEntries, Alias>
-        > extends DependenciesOf<F>[Alias]
-      ? false
-      : true
+    : ResolvedFlowEntry<RootEntries, ScopeEntries, Alias> extends {
+          readonly implementation: infer Implementation
+        }
+      ? FlowOfEntry<Implementation> extends DependenciesOf<F>[Alias]
+        ? false
+        : true
+      : false
 }[keyof DependenciesOf<F>]
   ? true
   : false
@@ -212,23 +212,67 @@ export type EffectiveLayerProviders<
   Provided extends Providers
 > = Provided & Omit<UnionToIntersection<ProviderUnion<Entries>>, keyof Provided>
 
-type ResolvableDependencyAliases<
+type DependencyFlow<Value> = Value extends Flow ? Value : never
+
+type DirectDependencyImplementations<F extends Flow> = {
+  readonly [Alias in keyof DependenciesOf<F>]: FlowImplementation<
+    DependencyFlow<DependenciesOf<F>[Alias]>
+  >
+}
+
+type UnresolvedDirectDependency<F extends Flow, Alias extends keyof DependenciesOf<F>> = Pick<
+  DirectDependencyImplementations<F>,
+  Alias
+> &
+  EffectiveDependenciesOf<DependencyFlow<DependenciesOf<F>[Alias]>>
+
+type UnresolvedDependencyBranch<
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
-  F extends Flow
-> = {
-  readonly [Alias in keyof EffectiveDependenciesOf<F>]: [
-    ResolvedFlowEntry<RootEntries, ScopeEntries, Alias>
-  ] extends [never]
-    ? never
-    : Alias
-}[keyof EffectiveDependenciesOf<F>]
+  F extends Flow,
+  Alias extends keyof DependenciesOf<F>,
+  Depth extends readonly unknown[]
+> =
+  ResolvedFlowEntry<RootEntries, ScopeEntries, Alias> extends infer Resolved
+    ? [Resolved] extends [never]
+      ? UnresolvedDirectDependency<F, Alias>
+      : Resolved extends {
+            readonly implementation: FlowImplementation<infer ResolvedFlow extends Flow>
+            readonly scope: infer ResolvedScope extends LayerEntries
+          }
+        ? ScopedUnresolvedDependencies<
+            RootEntries,
+            ResolvedScope,
+            ResolvedFlow,
+            [...Depth, unknown]
+          >
+        : UnresolvedDirectDependency<F, Alias>
+    : UnresolvedDirectDependency<F, Alias>
+
+type ScopedUnresolvedDependencies<
+  RootEntries extends LayerEntries,
+  ScopeEntries extends LayerEntries,
+  F extends Flow,
+  Depth extends readonly unknown[] = []
+> = Depth['length'] extends 16
+  ? EffectiveDependenciesOf<F>
+  : UnionToIntersection<
+      {
+        readonly [Alias in keyof DependenciesOf<F>]: UnresolvedDependencyBranch<
+          RootEntries,
+          ScopeEntries,
+          F,
+          Alias,
+          Depth
+        >
+      }[keyof DependenciesOf<F>]
+    >
 
 type UnresolvedDependencies<
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
   F extends Flow
-> = Omit<EffectiveDependenciesOf<F>, ResolvableDependencyAliases<RootEntries, ScopeEntries, F>>
+> = ScopedUnresolvedDependencies<RootEntries, ScopeEntries, F>
 
 type SuppliedDependencySignalHandlers<Deps> = {
   readonly [Alias in keyof Deps as Deps[Alias] extends FlowImplementation<infer F extends Flow>

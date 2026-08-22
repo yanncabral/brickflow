@@ -56,14 +56,18 @@ export function lookupLayer(
 export function findLayerDependency(
   layer: AnyLayer,
   caller: FlattenedLayerEntry,
-  alias: string
+  alias: string,
+  fallback?: FlattenedLayerEntry
 ): FlattenedLayerEntry | undefined {
   const entries = flattenLayer(layer)
   const inCallerScope = entries.filter(
     (entry) => entry.key === alias && entry.layerPath.join('.') === caller.layerPath.join('.')
   )
-  const matches =
-    inCallerScope.length > 0 ? inCallerScope : entries.filter((entry) => entry.key === alias)
+  if (inCallerScope.length > 0) return inCallerScope[0]
+
+  const matches = entries.filter((entry) => entry.key === alias)
+  if (matches.length === 0) return fallback
+  if (matches.length > 1 && fallback) return fallback
 
   if (matches.length > 1) {
     throw new Error(
