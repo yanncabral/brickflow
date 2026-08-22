@@ -95,7 +95,7 @@ type EffectiveRequirementUnion<
     ? EffectiveRequirementsOf<F>
     : Entries[Key] extends { readonly entries: infer Nested extends LayerEntries }
       ? Depth['length'] extends 16
-        ? never
+        ? Readonly<Record<string, never>>
         : EffectiveRequirementUnion<Nested, [...Depth, unknown]>
       : never
 }[keyof Entries]
