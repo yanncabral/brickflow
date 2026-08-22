@@ -76,6 +76,81 @@ new Layer('invalid', { invalid: {} })
 // @ts-expect-error reserved names cannot be used as entries
 new Layer('invalid', { provide: getUser })
 
+type Repository = { get(id: string): string }
+
+interface RepositoryFlow extends Flow {
+  params: undefined
+  result: undefined
+  requires: { repository: Repository }
+}
+
+interface TransitiveRequirementFlow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { repositoryWorker: RepositoryFlow }
+}
+
+const repository: Repository = { get: (id) => id }
+const repositoryWorker = flow<RepositoryFlow>(() => undefined)
+const transitiveRequirement = flow<TransitiveRequirementFlow>(
+  async (_params, _requirements, { repositoryWorker: runRepositoryWorker }) =>
+    runRepositoryWorker(undefined)
+)
+
+const directTransitiveLayer = new Layer('direct-transitive', { transitiveRequirement })
+const oneLevelTransitiveLayer = new Layer('one-level-transitive', {
+  nested: directTransitiveLayer
+})
+const twoLevelTransitiveLayer = new Layer('two-level-transitive', {
+  nested: oneLevelTransitiveLayer
+})
+
+// Direct Flow effective requirements validate transitive provider values.
+// @ts-expect-error transitive provider must satisfy Repository
+directTransitiveLayer.provide({ repository: 1 })
+// Nested Layers preserve effective requirement validation at every level.
+// @ts-expect-error one nested Layer level must preserve the transitive requirement type
+oneLevelTransitiveLayer.provide({ repository: 1 })
+// @ts-expect-error two nested Layer levels must preserve the transitive requirement type
+twoLevelTransitiveLayer.provide({ repository: 1 })
+
+const directTransitiveProvided = directTransitiveLayer.provide({ repository })
+const oneLevelTransitiveProvided = oneLevelTransitiveLayer.provide({ repository })
+const twoLevelTransitiveProvided = twoLevelTransitiveLayer.provide({ repository })
+
+// Valid providers remove the transitive requirement from bound run options.
+directTransitiveProvided.transitiveRequirement.run(undefined, {
+  dependencies: { repositoryWorker }
+})
+oneLevelTransitiveProvided.nested.transitiveRequirement.run(undefined, {
+  dependencies: { repositoryWorker }
+})
+twoLevelTransitiveProvided.nested.nested.transitiveRequirement.run(undefined, {
+  dependencies: { repositoryWorker }
+})
+
+const oneLevelTransitiveOverridden = oneLevelTransitiveProvided.override({ repository })
+oneLevelTransitiveOverridden.nested.transitiveRequirement.run(undefined, {
+  dependencies: { repositoryWorker }
+})
+
+// @ts-expect-error overrides validate nested transitive requirement values
+oneLevelTransitiveProvided.override({ repository: 1 })
+
+interface ConflictingTransitiveRepositoryFlow extends Flow {
+  params: undefined
+  result: undefined
+  requires: { repository: number }
+}
+
+const conflictingTransitiveRepository = flow<ConflictingTransitiveRepositoryFlow>(() => undefined)
+const nestedEffectiveConflictLayer = new Layer('nested-effective-conflict', {
+  nested: oneLevelTransitiveLayer,
+  conflictingTransitiveRepository
+})
+// @ts-expect-error nested effective requirement conflicts retain RequirementConflict validation
+nestedEffectiveConflictLayer.provide({ repository })
+
 type PrimaryService = { kind: 'primary'; run(): string }
 type SecondaryService = { kind: 'secondary'; run(): string }
 type UnionService = PrimaryService | SecondaryService

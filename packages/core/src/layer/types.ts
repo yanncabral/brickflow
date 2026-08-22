@@ -87,24 +87,23 @@ type RequirementsFromEntries<Entries extends LayerEntries> = {
   >
 }
 
+type EffectiveRequirementUnion<
+  Entries extends LayerEntries,
+  Depth extends readonly unknown[] = []
+> = {
+  [Key in keyof Entries]: Entries[Key] extends FlowImplementation<infer F extends Flow>
+    ? EffectiveRequirementsOf<F>
+    : Entries[Key] extends { readonly entries: infer Nested extends LayerEntries }
+      ? Depth['length'] extends 16
+        ? never
+        : EffectiveRequirementUnion<Nested, [...Depth, unknown]>
+      : never
+}[keyof Entries]
+
 type EffectiveRequirementsFromEntries<Entries extends LayerEntries> = {
-  readonly [Key in KeysOfUnion<
-    {
-      [K in keyof Entries]: Entries[K] extends FlowImplementation<infer F extends Flow>
-        ? EffectiveRequirementsOf<F>
-        : Entries[K] extends { readonly entries: infer Nested extends LayerEntries }
-          ? RequirementsFromEntries<Nested>
-          : Record<never, never>
-    }[keyof Entries]
-  >]: ResolveRequirement<
+  readonly [Key in KeysOfUnion<EffectiveRequirementUnion<Entries>>]: ResolveRequirement<
     Key,
-    {
-      [K in keyof Entries]: Entries[K] extends FlowImplementation<infer F extends Flow>
-        ? EffectiveRequirementsOf<F>
-        : Entries[K] extends { readonly entries: infer Nested extends LayerEntries }
-          ? RequirementsFromEntries<Nested>
-          : Record<never, never>
-    }[keyof Entries]
+    EffectiveRequirementUnion<Entries>
   >
 }
 
