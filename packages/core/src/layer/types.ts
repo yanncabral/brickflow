@@ -335,8 +335,8 @@ export interface LayerState<
   override<
     const Values extends Partial<
       Pick<
-        RequirementsFromEntries<Entries>,
-        keyof Provided & keyof RequirementsFromEntries<Entries>
+        EffectiveRequirementsFromEntries<Entries>,
+        keyof Provided & keyof EffectiveRequirementsFromEntries<Entries>
       >
     >
   >(values: Values): BoundLayer<Id, Entries, Omit<Provided, keyof Values> & Values>
