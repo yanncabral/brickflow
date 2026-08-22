@@ -70,16 +70,12 @@ class LayerImplementation<
   }
 
   private bindEntry(entry: unknown, key: string): unknown {
-    if (isFlowImplementation(entry)) return this.bindFlow(entry, key)
-    if (isLayer(entry)) return this.bindNestedLayer(entry)
+    if (isFlowImplementation(entry)) return this.bindFlow(entry, key, `${this.id}.${key}`)
+    if (isLayer(entry)) return this.bindNestedLayer(entry, `${this.id}.${entry.id}`)
     return entry
   }
 
-  private bindFlow(
-    entry: ReturnType<typeof flowIdentity>,
-    key: string,
-    idSuffix?: string
-  ): unknown {
+  private bindFlow(entry: ReturnType<typeof flowIdentity>, key: string, targetId: string): unknown {
     const layer = this
     const bound = {
       handler: entry.handler,
@@ -95,17 +91,19 @@ class LayerImplementation<
         }
       ) {
         const entries = flattenLayer(layer)
-        const root = entries.find(
-          (candidate) =>
-            candidate.implementation === entry &&
-            candidate.key === key &&
-            (idSuffix === undefined || candidate.id.endsWith(idSuffix))
-        ) as FlattenedLayerEntry | undefined
+        const root = entries.find((candidate) => candidate.id === targetId) as
+          | FlattenedLayerEntry
+          | undefined
         if (!root) throw new Error(`Bound Flow entry not found: ${key}`)
         const suppliedDependencies = Object.entries(options?.dependencies ?? {}).map(
           ([dependencyKey, implementation]) =>
-            Object.freeze({ id: dependencyKey, key: dependencyKey, implementation })
-        )
+            Object.freeze({
+              id: dependencyKey,
+              key: dependencyKey,
+              implementation,
+              layerPath: Object.freeze([]) as readonly string[]
+            })
+        ) as readonly FlattenedLayerEntry[]
         return executeFlow({
           root,
           entries: [...entries, ...suppliedDependencies],
@@ -115,8 +113,13 @@ class LayerImplementation<
             ...((options?.requirements as Readonly<Record<string, unknown>> | undefined) ?? {})
           }),
           resolveDependency: (caller, alias) => {
-            const layerEntry = findLayerDependency(layer, caller as FlattenedLayerEntry, alias)
-            if (layerEntry) return layerEntry
+            if (
+              Array.isArray((caller as FlattenedLayerEntry).layerPath) &&
+              (caller as FlattenedLayerEntry).layerPath.length > 0
+            ) {
+              const layerEntry = findLayerDependency(layer, caller as FlattenedLayerEntry, alias)
+              if (layerEntry) return layerEntry
+            }
             const supplied = suppliedDependencies.find((candidate) => candidate.key === alias)
             if (supplied) return supplied
             throw new Error(`Missing dependency Flow entry "${alias}" in the configured Layer`)
@@ -136,7 +139,7 @@ class LayerImplementation<
     return Object.freeze(bound)
   }
 
-  private bindNestedLayer(nested: AnyLayer, parentSuffix = nested.id): AnyLayer {
+  private bindNestedLayer(nested: AnyLayer, pathPrefix: string): AnyLayer {
     const view = Object.create(Object.getPrototypeOf(nested)) as Record<string, unknown>
     Object.defineProperties(view, {
       id: { enumerable: true, value: nested.id },
@@ -149,9 +152,9 @@ class LayerImplementation<
       Object.defineProperty(view, key, {
         enumerable: true,
         value: isFlowImplementation(entry)
-          ? this.bindFlow(entry, key, `${parentSuffix}.${key}`)
+          ? this.bindFlow(entry, key, `${pathPrefix}.${key}`)
           : isLayer(entry)
-            ? this.bindNestedLayer(entry, `${parentSuffix}.${entry.id}`)
+            ? this.bindNestedLayer(entry, `${pathPrefix}.${entry.id}`)
             : entry
       })
     }
