@@ -168,7 +168,7 @@ export function runDirectFlow<F extends Flow>(
     directSignals: true,
     ...(options?.signals ? { signals: options.signals } : {}),
     ...(options?.worker ? { worker: options.worker } : {}),
-    ...(options?.id ? { id: options.id } : {}),
+    ...(typeof options?.id === 'string' ? { id: options.id } : {}),
     ...(options?.metadata ? { metadata: options.metadata } : {})
   })
 }

@@ -108,6 +108,21 @@ describe('direct Flow execution', () => {
     await expect(Promise.resolve(defective.run({ value: 1 }))).rejects.toThrow('defect')
   })
 
+  test('preserves explicit empty execution IDs and generates omitted IDs', async () => {
+    const worker = new RecordingWorker()
+
+    const explicitRun = plain.run({ value: 2 }, { worker, id: '' })
+    expect(worker.requests[0]?.id).toBe('')
+    expect(explicitRun.id).toBe('')
+    await expect(Promise.resolve(explicitRun)).resolves.toBe(4)
+
+    const generatedRun = plain.run({ value: 3 }, { worker })
+    expect(worker.requests[1]?.id).not.toBe('')
+    expect(generatedRun.id).not.toBe('')
+    expect(worker.requests[1]?.id).toBe(generatedRun.id)
+    await expect(Promise.resolve(generatedRun)).resolves.toBe(6)
+  })
+
   test('selects a custom Worker and forwards identity and metadata', async () => {
     const worker = new RecordingWorker()
     await parent
