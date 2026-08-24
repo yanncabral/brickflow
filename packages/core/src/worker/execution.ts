@@ -22,10 +22,17 @@ import { localWorker } from './local-worker'
 import { createFlowRun } from './run'
 import type { FlowRun, RunMetadata } from './types'
 
+export interface SuppliedDependencyNode {
+  readonly flow: AnyFlowImplementation
+  readonly dependencies?: Readonly<Record<string, SuppliedDependencyNode>>
+}
+
 export interface ExecutionEntry {
   readonly id?: string
   readonly key: string
   readonly implementation: AnyFlowImplementation
+  readonly suppliedDependencies?: Readonly<Record<string, SuppliedDependencyNode>>
+  readonly suppliedPath?: readonly string[]
 }
 
 interface ExecuteOptions<F extends Flow> {
@@ -42,13 +49,7 @@ interface ExecuteOptions<F extends Flow> {
 }
 
 function directSignalChain(handlers: Readonly<Record<string, unknown>>): SignalHandlerChain {
-  const proxy = new Proxy(handlers as UnknownSignalHandlers, {
-    get(target, property) {
-      if (typeof property !== 'string') return undefined
-      return target[property] ?? target[property.split('.').at(-1) ?? property]
-    }
-  })
-  return Object.freeze({ handlers: proxy, boundary: true })
+  return createSignalHandlerChain(flattenNamespacedSignalHandlers(handlers), undefined, true)
 }
 
 async function executeResolvedFlow<F extends Flow>(
@@ -66,7 +67,8 @@ async function executeResolvedFlow<F extends Flow>(
         dependencyParams: unknown,
         callOptions?: { readonly signals?: Readonly<Record<string, unknown>> }
       ) => {
-        const dependencyId = dependencyEntry.id?.split('.') ?? [dependencyEntry.key]
+        const dependencyId = dependencyEntry.suppliedPath ??
+          dependencyEntry.id?.split('.') ?? [dependencyEntry.key]
         const parentSignalHandlers = context.signalHandlers
         const localHandlers = callOptions?.signals
           ? createSignalHandlerChain(
@@ -138,32 +140,47 @@ export function executeFlow<F extends Flow>(
   return createFlowRun((options.worker ?? localWorker).start(request))
 }
 
+function createSuppliedEntry(
+  key: string,
+  node: SuppliedDependencyNode,
+  path: readonly string[]
+): ExecutionEntry {
+  const id = [...path, key].join('.')
+  return Object.freeze({
+    id,
+    key,
+    implementation: node.flow,
+    suppliedPath: Object.freeze([...path, key]),
+    ...(node.dependencies ? { suppliedDependencies: node.dependencies } : {})
+  })
+}
+
 export function runDirectFlow<F extends Flow>(
   implementation: FlowImplementation<F>,
   params: ParamsOf<F>,
   options?: Readonly<{
     requirements?: Readonly<Record<string, unknown>>
-    dependencies?: Readonly<Record<string, AnyFlowImplementation>>
+    dependencies?: Readonly<Record<string, SuppliedDependencyNode>>
     signals?: Readonly<Record<string, unknown>>
     worker?: Worker
     id?: string
     metadata?: RunMetadata
   }>
 ): FlowRun<EffectiveErrorsOf<F>, ResultOf<F>> {
-  const dependencyEntries = Object.entries(options?.dependencies ?? {}).map(([key, dependency]) =>
-    Object.freeze({ id: key, key, implementation: dependency })
-  )
-  const root = Object.freeze({ key: 'direct', implementation })
+  const root = Object.freeze({
+    key: 'direct',
+    implementation,
+    ...(options?.dependencies ? { suppliedDependencies: options.dependencies } : {})
+  })
   return executeFlow({
     root,
-    entries: [root, ...dependencyEntries],
+    entries: [root],
     params,
     providers: Object.freeze({ ...(options?.requirements ?? {}) }),
-    resolveDependency: (_caller, alias) => {
-      const matches = dependencyEntries.filter((entry) => entry.key === alias)
-      if (matches.length === 0) throw new Error(`Missing direct dependency Flow "${alias}"`)
-      if (matches.length > 1) throw new Error(`Ambiguous direct dependency Flow "${alias}"`)
-      return matches[0] as ExecutionEntry
+    resolveDependency: (caller, alias) => {
+      const node = caller.suppliedDependencies?.[alias]
+      if (!node) throw new Error(`Missing direct dependency Flow "${alias}"`)
+      return createSuppliedEntry(alias, node, caller.id?.split('.') ?? [])
     },
     directSignals: true,
     ...(options?.signals ? { signals: options.signals } : {}),

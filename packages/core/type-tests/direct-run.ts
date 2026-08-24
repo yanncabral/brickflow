@@ -64,7 +64,9 @@ const configuredResult: string = await configured.run(
   { id: 'ada' },
   {
     requirements: { repository, logger },
-    dependencies: { child, grandchild }
+    dependencies: {
+      child: { flow: child, dependencies: { grandchild: { flow: grandchild } } }
+    }
   }
 )
 void configuredResult
@@ -84,12 +86,35 @@ configured.run(
 // @ts-expect-error requirements use an explicit namespace
 configured.run({ id: 'ada' }, { repository, logger, dependencies: { child, grandchild } })
 
+configured.run(
+  { id: 'ada' },
+  {
+    requirements: { repository, logger },
+    dependencies: {
+      // @ts-expect-error bare Flow dependency values are rejected
+      child
+    }
+  }
+)
+configured.run(
+  { id: 'ada' },
+  {
+    requirements: { repository, logger },
+    dependencies: {
+      // @ts-expect-error nested dependencies are required while child remains unresolved
+      child: { flow: child }
+    }
+  }
+)
+
 declare const customWorker: Worker
 configured.run(
   { id: 'ada' },
   {
     requirements: { repository, logger },
-    dependencies: { child, grandchild },
+    dependencies: {
+      child: { flow: child, dependencies: { grandchild: { flow: grandchild } } }
+    },
     worker: customWorker
   }
 )
@@ -105,7 +130,10 @@ const missingGrandchild = new Layer('missing-grandchild', { configured, child })
 })
 // @ts-expect-error grandchild remains unresolved
 missingGrandchild.configured.run({ id: 'ada' })
-missingGrandchild.configured.run({ id: 'ada' }, { dependencies: { grandchild } })
+missingGrandchild.configured.run(
+  { id: 'ada' },
+  { dependencies: { grandchild: { flow: grandchild } } }
+)
 
 const nestedProvider = new Layer('nested-provider', { child, grandchild }).provide({
   repository,
@@ -154,14 +182,14 @@ const suppliedSignalsApp = new Layer('app', { parent: suppliedSignalledParent })
 suppliedSignalsApp.parent.run(
   { id: 'ada' },
   {
-    dependencies: { child: suppliedSignalledChild },
+    dependencies: { child: { flow: suppliedSignalledChild } },
     signals: { child: { approve: ({ id }) => id === 'ada' } }
   }
 )
 suppliedSignalsApp.parent.run(
   { id: 'ada' },
   {
-    dependencies: { child: suppliedSignalledChild },
+    dependencies: { child: { flow: suppliedSignalledChild } },
     // @ts-expect-error supplied dependency signal handlers remain required
     signals: {}
   }
@@ -182,7 +210,7 @@ const mixedSignalsApp = new Layer('app', { parent: mixedSignalledParent })
 mixedSignalsApp.parent.run(
   { id: 'ada' },
   {
-    dependencies: { child: suppliedSignalledChild },
+    dependencies: { child: { flow: suppliedSignalledChild } },
     signals: {
       app: { parent: { confirm: ({ id }) => id === 'ada' } },
       child: { approve: ({ id }) => id === 'ada' }
@@ -192,7 +220,7 @@ mixedSignalsApp.parent.run(
 mixedSignalsApp.parent.run(
   { id: 'ada' },
   {
-    dependencies: { child: suppliedSignalledChild },
+    dependencies: { child: { flow: suppliedSignalledChild } },
     // @ts-expect-error mixed signal handlers require the Layer-resolved namespace
     signals: { child: { approve: ({ id }) => id === 'ada' } }
   }
@@ -243,7 +271,9 @@ const suppliedCheckoutApp = new Layer('supplied-checkout-app', {
   placeOrder: scopedPlaceOrder,
   repository: scopedRepository
 })
-suppliedCheckoutApp.placeOrder.run(undefined, { dependencies: { checkout: scopedCheckout } })
+suppliedCheckoutApp.placeOrder.run(undefined, {
+  dependencies: { checkout: { flow: scopedCheckout } }
+})
 
 const checkoutWithoutRepository = new Layer('checkout-without-repository', {
   checkout: scopedCheckout
@@ -257,7 +287,9 @@ const ambiguouslyResolvedApp = new Layer('ambiguous-app', {
 })
 // @ts-expect-error checkout's transitive repository alias is globally ambiguous
 ambiguouslyResolvedApp.placeOrder.run(undefined)
-ambiguouslyResolvedApp.placeOrder.run(undefined, { dependencies: { repository: scopedRepository } })
+ambiguouslyResolvedApp.placeOrder.run(undefined, {
+  dependencies: { repository: { flow: scopedRepository } }
+})
 
 const uniquelyResolvedApp = new Layer('unique-app', {
   placeOrder: scopedPlaceOrder,
@@ -273,16 +305,25 @@ const transitivelyUnresolvedApp = new Layer('transitively-unresolved-app', {
 // @ts-expect-error genuinely unresolved transitive aliases remain required
 transitivelyUnresolvedApp.placeOrder.run(undefined)
 transitivelyUnresolvedApp.placeOrder.run(undefined, {
-  dependencies: { repository: scopedRepository }
+  dependencies: { repository: { flow: scopedRepository } }
 })
 
 const directlyUnresolvedApp = new Layer('directly-unresolved-app', {
   placeOrder: scopedPlaceOrder
 })
-// @ts-expect-error unresolved direct dependencies retain their flattened transitive dependencies
-directlyUnresolvedApp.placeOrder.run(undefined, { dependencies: { checkout: scopedCheckout } })
 directlyUnresolvedApp.placeOrder.run(undefined, {
-  dependencies: { checkout: scopedCheckout, repository: scopedRepository }
+  dependencies: {
+    // @ts-expect-error unresolved direct nodes require their recursive child dependencies
+    checkout: { flow: scopedCheckout }
+  }
+})
+directlyUnresolvedApp.placeOrder.run(undefined, {
+  dependencies: {
+    checkout: {
+      flow: scopedCheckout,
+      dependencies: { repository: { flow: scopedRepository } }
+    }
+  }
 })
 
 interface DepthLeafFlow extends Flow {
@@ -415,7 +456,7 @@ const depthBoundedLayer = new Layer('depth-bounded', {
 })
 // @ts-expect-error depth exhaustion conservatively retains unresolved aliases
 depthBoundedLayer.depthRoot.run(undefined)
-depthBoundedLayer.depthRoot.run(undefined, { dependencies: { leaf: depthLeaf } })
+depthBoundedLayer.depthRoot.run(undefined, { dependencies: { leaf: { flow: depthLeaf } } })
 
 const worker: Worker = {
   start<Result, Failure>(

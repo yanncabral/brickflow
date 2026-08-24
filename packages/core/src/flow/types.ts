@@ -111,6 +111,46 @@ export type EffectiveSignalsOf<
 > = SignalsOf<F> &
   (Depth['length'] extends 16 ? Empty : EffectiveSignalsFromDependencies<F, [...Depth, unknown]>)
 
+type DependencyNodes<F extends Flow, Depth extends readonly unknown[] = []> = {
+  readonly [Alias in keyof DependenciesOf<F>]: DependencyNode<
+    DependencyFlow<DependenciesOf<F>[Alias]>,
+    Depth
+  >
+}
+
+export type DependencyNode<
+  F extends Flow,
+  Depth extends readonly unknown[] = []
+> = Depth['length'] extends 16
+  ? {
+      readonly flow: AnyFlowImplementation
+      readonly dependencies?: Readonly<Record<string, unknown>>
+    }
+  : {
+      readonly flow: FlowImplementation<F>
+    } & (keyof DependenciesOf<F> extends never
+      ? { readonly dependencies?: never }
+      : { readonly dependencies: DependencyNodes<F, [...Depth, unknown]> })
+
+export type DependencySignalHandlers<F extends Flow, Depth extends readonly unknown[] = []> = {
+  readonly [Alias in keyof DependenciesOf<F> as keyof FlowSignalHandlers<
+    DependencyFlow<DependenciesOf<F>[Alias]>,
+    [...Depth, unknown]
+  > extends never
+    ? never
+    : Alias]: FlowSignalHandlers<DependencyFlow<DependenciesOf<F>[Alias]>, [...Depth, unknown]>
+}
+
+export type FlowSignalHandlers<
+  F extends Flow,
+  Depth extends readonly unknown[] = []
+> = (SignalsOf<F> extends SignalDefinitions
+  ? keyof SignalsOf<F> extends never
+    ? Empty
+    : BoundarySignalHandlers<SignalsOf<F>>
+  : Empty) &
+  (Depth['length'] extends 16 ? Empty : DependencySignalHandlers<F, Depth>)
+
 type DependencyCallOptions<F extends Flow> =
   SignalsOf<F> extends SignalDefinitions
     ? keyof SignalsOf<F> extends never
@@ -146,14 +186,12 @@ type RequirementsOption<F extends Flow> = RequiredSection<
   { readonly requirements: EffectiveRequirementsOf<F> }
 >
 type DependenciesOption<F extends Flow> = RequiredSection<
-  keyof EffectiveDependenciesOf<F>,
-  { readonly dependencies: EffectiveDependenciesOf<F> }
+  keyof DependenciesOf<F>,
+  { readonly dependencies: DependencyNodes<F> }
 >
-type SignalsOption<F extends Flow> = keyof EffectiveSignalsOf<F> extends never
+type SignalsOption<F extends Flow> = keyof FlowSignalHandlers<F> extends never
   ? { readonly signals?: never }
-  : EffectiveSignalsOf<F> extends SignalDefinitions
-    ? { readonly signals: BoundarySignalHandlers<EffectiveSignalsOf<F>> }
-    : { readonly signals?: never }
+  : { readonly signals: FlowSignalHandlers<F> }
 
 export type FlowRunOptions<F extends Flow> = {
   readonly worker?: Worker
@@ -164,8 +202,8 @@ export type FlowRunOptions<F extends Flow> = {
   SignalsOption<F>
 
 export type FlowRunOptionArgs<F extends Flow> = keyof EffectiveRequirementsOf<F> extends never
-  ? keyof EffectiveDependenciesOf<F> extends never
-    ? keyof EffectiveSignalsOf<F> extends never
+  ? keyof DependenciesOf<F> extends never
+    ? keyof FlowSignalHandlers<F> extends never
       ? readonly [options?: FlowRunOptions<F>]
       : readonly [options: FlowRunOptions<F>]
     : readonly [options: FlowRunOptions<F>]

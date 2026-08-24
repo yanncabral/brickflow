@@ -140,18 +140,18 @@ const twoLevelTransitiveProvided = twoLevelTransitiveLayer.provide({ repository 
 
 // Valid providers remove the transitive requirement from bound run options.
 directTransitiveProvided.transitiveRequirement.run(undefined, {
-  dependencies: { repositoryWorker }
+  dependencies: { repositoryWorker: { flow: repositoryWorker } }
 })
 oneLevelTransitiveProvided.nested.transitiveRequirement.run(undefined, {
-  dependencies: { repositoryWorker }
+  dependencies: { repositoryWorker: { flow: repositoryWorker } }
 })
 twoLevelTransitiveProvided.nested.nested.transitiveRequirement.run(undefined, {
-  dependencies: { repositoryWorker }
+  dependencies: { repositoryWorker: { flow: repositoryWorker } }
 })
 
 const oneLevelTransitiveOverridden = oneLevelTransitiveProvided.override({ repository })
 oneLevelTransitiveOverridden.nested.transitiveRequirement.run(undefined, {
-  dependencies: { repositoryWorker }
+  dependencies: { repositoryWorker: { flow: repositoryWorker } }
 })
 
 // @ts-expect-error overrides validate nested transitive requirement values

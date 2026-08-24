@@ -1,6 +1,6 @@
 import type { EngineStatus } from '../engine/types'
 import type { Flow } from '../flow/contract'
-import type { FlowImplementation, SignalsOf } from '../flow/types'
+import type { DependenciesOf, FlowImplementation, SignalsOf } from '../flow/types'
 import type { AnyLayer, LayerEntries, LayerEntriesOf } from '../layer/types'
 import type {
   MatchedError,
@@ -24,13 +24,15 @@ type DependencyFlows<F extends Flow, Depth extends readonly unknown[] = []> =
           }[keyof Dependencies]
         : never)
 
-type GraphImplementations<Entry, F extends Flow> = Entry extends AnyLayer
-  ? GraphImplementations<LayerEntriesOf<Entry>[keyof LayerEntriesOf<Entry>], F>
-  : Entry extends FlowImplementation<infer EntryFlow extends Flow>
-    ? EntryFlow extends DependencyFlows<F>
-      ? Entry
-      : never
-    : never
+type DependencyFlow<Value> = Value extends Flow ? Value : never
+
+type DirectDependencyFlows<F extends Flow> = {
+  [Alias in keyof DependenciesOf<F>]: DependencyFlow<DependenciesOf<F>[Alias]>
+}[keyof DependenciesOf<F>]
+
+type SelectedGraphFlows<F extends Flow> =
+  | F
+  | Exclude<DependencyFlows<F>, F | DirectDependencyFlows<F>>
 
 type SignalsForImplementation<Implementation> =
   Implementation extends FlowImplementation<infer F extends Flow>
@@ -41,29 +43,49 @@ type SignalsForImplementation<Implementation> =
       : never
     : never
 
-type EntrySignalHandlers<Entry, Included> = Entry extends AnyLayer
-  ? SignalsForEntries<LayerEntriesOf<Entry>, Included>
-  : Entry extends Included
-    ? SignalsForImplementation<Entry>
+type EntrySignalHandlers<
+  Entry,
+  IncludedFlows,
+  ExcludedAliases extends PropertyKey
+> = Entry extends AnyLayer
+  ? SignalsForEntries<LayerEntriesOf<Entry>, IncludedFlows, ExcludedAliases>
+  : Entry extends FlowImplementation<infer EntryFlow extends Flow>
+    ? EntryFlow extends IncludedFlows
+      ? SignalsForImplementation<Entry>
+      : never
     : never
 
-type SignalsForEntries<Entries extends LayerEntries, Included> = {
-  readonly [Key in keyof Entries as [EntrySignalHandlers<Entries[Key], Included>] extends [never]
+type HasSignalHandlers<Value> = [Value] extends [never]
+  ? false
+  : keyof Value extends never
+    ? false
+    : true
+
+type SignalsForEntries<
+  Entries extends LayerEntries,
+  Included,
+  ExcludedAliases extends PropertyKey
+> = {
+  readonly [Key in keyof Entries as Key extends ExcludedAliases
     ? never
-    : Key]: EntrySignalHandlers<Entries[Key], Included>
+    : HasSignalHandlers<EntrySignalHandlers<Entries[Key], Included, ExcludedAliases>> extends true
+      ? Key
+      : never]: EntrySignalHandlers<Entries[Key], Included, ExcludedAliases>
 }
 
-type LayerSignalTree<Layer extends Pick<AnyLayer, 'entries'>, F extends Flow> = SignalsForEntries<
-  LayerEntriesOf<Layer>,
-  GraphImplementations<LayerEntriesOf<Layer>[keyof LayerEntriesOf<Layer>], F>
->
+type LayerSignalTree<
+  Layer extends Pick<AnyLayer, 'entries'>,
+  F extends Flow,
+  ExcludedAliases extends PropertyKey
+> = SignalsForEntries<LayerEntriesOf<Layer>, SelectedGraphFlows<F>, ExcludedAliases>
 
 export type LayerSignalHandlers<
   Layer extends Pick<AnyLayer, 'id' | 'entries'>,
-  F extends Flow
-> = keyof LayerSignalTree<Layer, F> extends never
+  F extends Flow,
+  ExcludedAliases extends PropertyKey = never
+> = keyof LayerSignalTree<Layer, F, ExcludedAliases> extends never
   ? Record<never, never>
-  : { readonly [Id in Layer['id']]: LayerSignalTree<Layer, F> }
+  : { readonly [Id in Layer['id']]: LayerSignalTree<Layer, F, ExcludedAliases> }
 
 export interface FlowRunControls {
   readonly id: string

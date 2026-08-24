@@ -1,18 +1,17 @@
 import type { Flow } from '../flow/contract'
 import type {
+  AnyFlowImplementation,
   DependenciesOf,
-  EffectiveDependenciesOf,
+  DependencyNode,
   EffectiveErrorsOf,
   EffectiveRequirementsOf,
-  EffectiveSignalsOf,
   FlowImplementation,
   FlowRunOptions,
+  FlowSignalHandlers,
   ParamsOf,
   RequirementsOf,
-  ResultOf,
-  SignalsOf
+  ResultOf
 } from '../flow/types'
-import type { BoundarySignalHandlers, SignalDefinitions } from '../signal/types'
 import type { FlowRun, LayerSignalHandlers } from '../worker/types'
 
 export type Providers = Readonly<Record<string, unknown>>
@@ -228,11 +227,20 @@ type OverrideValues<Entries extends LayerEntries, Provided extends Providers> = 
 
 type DependencyFlow<Value> = Value extends Flow ? Value : never
 
-type DirectDependencyImplementations<F extends Flow> = {
-  readonly [Alias in keyof DependenciesOf<F>]: FlowImplementation<
-    DependencyFlow<DependenciesOf<F>[Alias]>
-  >
-}
+type SuppliedDependencyNode<
+  RootEntries extends LayerEntries,
+  ScopeEntries extends LayerEntries,
+  F extends Flow,
+  Depth extends readonly unknown[]
+> = Depth['length'] extends 16
+  ? DependencyNode<F, Depth>
+  : {
+      readonly flow: FlowImplementation<F>
+    } & (keyof ScopedUnresolvedDependencies<RootEntries, ScopeEntries, F, Depth> extends never
+      ? { readonly dependencies?: never }
+      : {
+          readonly dependencies: ScopedUnresolvedDependencies<RootEntries, ScopeEntries, F, Depth>
+        })
 
 type UnresolvedDirectDependency<
   RootEntries extends LayerEntries,
@@ -240,13 +248,14 @@ type UnresolvedDirectDependency<
   F extends Flow,
   Alias extends keyof DependenciesOf<F>,
   Depth extends readonly unknown[]
-> = Pick<DirectDependencyImplementations<F>, Alias> &
-  ScopedUnresolvedDependencies<
+> = {
+  readonly [Key in Alias]: SuppliedDependencyNode<
     RootEntries,
     ScopeEntries,
     DependencyFlow<DependenciesOf<F>[Alias]>,
     [...Depth, unknown]
   >
+}
 
 type UnresolvedDependencyBranch<
   RootEntries extends LayerEntries,
@@ -277,7 +286,9 @@ type ScopedUnresolvedDependencies<
   F extends Flow,
   Depth extends readonly unknown[] = []
 > = Depth['length'] extends 16
-  ? EffectiveDependenciesOf<F>
+  ? Readonly<
+      Record<string, { readonly flow: AnyFlowImplementation; readonly dependencies?: unknown }>
+    >
   : UnionToIntersection<
       {
         readonly [Alias in keyof DependenciesOf<F>]: UnresolvedDependencyBranch<
@@ -296,19 +307,21 @@ type UnresolvedDependencies<
   F extends Flow
 > = ScopedUnresolvedDependencies<RootEntries, ScopeEntries, F>
 
-type SuppliedDependencySignalHandlers<Deps> = {
-  readonly [Alias in keyof Deps as Deps[Alias] extends FlowImplementation<infer F extends Flow>
-    ? SignalsOf<F> extends SignalDefinitions
-      ? keyof SignalsOf<F> extends never
-        ? never
-        : Alias
-      : never
-    : never]: Deps[Alias] extends FlowImplementation<infer F extends Flow>
-    ? SignalsOf<F> extends SignalDefinitions
-      ? BoundarySignalHandlers<SignalsOf<F>>
-      : never
-    : never
-}
+type SuppliedDependencySignalHandlers<Deps> = string extends keyof Deps
+  ? Record<never, never>
+  : {
+      readonly [Alias in keyof Deps as Deps[Alias] extends {
+        readonly flow: FlowImplementation<infer F extends Flow>
+      }
+        ? keyof FlowSignalHandlers<F> extends never
+          ? never
+          : Alias
+        : never]: Deps[Alias] extends {
+        readonly flow: FlowImplementation<infer F extends Flow>
+      }
+        ? FlowSignalHandlers<F>
+        : never
+    }
 
 type BoundFlowRunOptions<
   F extends Flow,
@@ -323,10 +336,14 @@ type BoundFlowRunOptions<
   (keyof UnresolvedDependencies<RootEntries, ScopeEntries, F> extends never
     ? { readonly dependencies?: never }
     : { readonly dependencies: UnresolvedDependencies<RootEntries, ScopeEntries, F> }) &
-  (keyof EffectiveSignalsOf<F> extends never
+  (keyof FlowSignalHandlers<F> extends never
     ? { readonly signals?: never }
     : {
-        readonly signals: LayerSignalHandlers<LayerState<RootId, RootEntries, Provided>, F> &
+        readonly signals: LayerSignalHandlers<
+          LayerState<RootId, RootEntries, Provided>,
+          F,
+          keyof UnresolvedDependencies<RootEntries, ScopeEntries, F>
+        > &
           SuppliedDependencySignalHandlers<UnresolvedDependencies<RootEntries, ScopeEntries, F>>
       })
 
@@ -338,7 +355,7 @@ type BoundFlowRunOptionArgs<
   Provided extends Providers
 > = keyof Omit<EffectiveRequirementsOf<F>, keyof Provided> extends never
   ? keyof UnresolvedDependencies<RootEntries, ScopeEntries, F> extends never
-    ? keyof EffectiveSignalsOf<F> extends never
+    ? keyof FlowSignalHandlers<F> extends never
       ? readonly [options?: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided>]
       : readonly [options: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided>]
     : readonly [options: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided>]

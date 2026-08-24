@@ -1,6 +1,6 @@
 import { isFlowImplementation, markFlowImplementation } from '../flow/implementation'
 import type { FlowImplementation } from '../flow/types'
-import { executeFlow } from '../worker/execution'
+import { executeFlow, type SuppliedDependencyNode } from '../worker/execution'
 import {
   effectiveLayerProviders,
   findLayerDependency,
@@ -88,7 +88,7 @@ class LayerImplementation<
         params: unknown,
         options?: {
           readonly requirements?: Readonly<Record<string, unknown>>
-          readonly dependencies?: Readonly<Record<string, FlowImplementation>>
+          readonly dependencies?: Readonly<Record<string, SuppliedDependencyNode>>
           readonly signals?: Readonly<Record<string, unknown>>
           readonly worker?: unknown
           readonly id?: string
@@ -100,18 +100,14 @@ class LayerImplementation<
           | FlattenedLayerEntry
           | undefined
         if (!root) throw new Error(`Bound Flow entry not found: ${key}`)
-        const suppliedDependencies = Object.entries(options?.dependencies ?? {}).map(
-          ([dependencyKey, implementation]) =>
-            Object.freeze({
-              id: dependencyKey,
-              key: dependencyKey,
-              implementation,
-              layerPath: Object.freeze([]) as readonly string[]
-            })
-        ) as readonly FlattenedLayerEntry[]
+        const suppliedDependencies = options?.dependencies ?? {}
+        const executionRoot = Object.freeze({
+          ...root,
+          ...(options?.dependencies ? { suppliedDependencies } : {})
+        })
         return executeFlow({
-          root,
-          entries: [...entries, ...suppliedDependencies],
+          root: executionRoot,
+          entries,
           params,
           providers: Object.freeze({
             ...effectiveLayerProviders(layer),
@@ -119,20 +115,24 @@ class LayerImplementation<
           }),
           resolveDependency: (caller, alias) => {
             const callerLayerPath = (caller as FlattenedLayerEntry).layerPath
-            const supplied = suppliedDependencies.find((candidate) => candidate.key === alias)
-            const scopedSupplied =
-              supplied && Array.isArray(callerLayerPath)
-                ? Object.freeze({
-                    ...supplied,
-                    layerPath: Object.freeze([...callerLayerPath])
-                  })
-                : supplied
+            const supplied =
+              caller.suppliedDependencies?.[alias] ?? executionRoot.suppliedDependencies?.[alias]
+            const scopedSupplied = supplied
+              ? Object.freeze({
+                  id: [...(caller.id?.split('.') ?? []), alias].join('.'),
+                  key: alias,
+                  implementation: supplied.flow,
+                  layerPath: Object.freeze([...(callerLayerPath ?? root.layerPath)]),
+                  suppliedPath: Object.freeze([...(caller.suppliedPath ?? []), alias]),
+                  ...(supplied.dependencies ? { suppliedDependencies: supplied.dependencies } : {})
+                })
+              : undefined
             if (Array.isArray(callerLayerPath) && callerLayerPath.length > 0) {
               const layerEntry = findLayerDependency(
                 layer,
                 caller as FlattenedLayerEntry,
                 alias,
-                scopedSupplied
+                scopedSupplied as FlattenedLayerEntry | undefined
               )
               if (layerEntry) return layerEntry
             }
