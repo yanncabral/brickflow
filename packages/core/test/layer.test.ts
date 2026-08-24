@@ -85,6 +85,30 @@ describe('Layer', () => {
     expect(users.providers).toEqual({ repository: postgres })
   })
 
+  test('outer overrides resolve conflicting nested providers without mutating originals', async () => {
+    interface ReadUserFlow extends Flow {
+      params: { id: string }
+      result: string
+      requires: { repository: { get(id: string): string } }
+    }
+
+    const readUser = flow<ReadUserFlow>(({ id }, { repository }) => repository.get(id))
+    const firstRepository = { get: (id: string) => `first-${id}` }
+    const secondRepository = { get: (id: string) => `second-${id}` }
+    const replacement = { get: (id: string) => `replacement-${id}` }
+    const first = new Layer('first', { readUser }).provide({ repository: firstRepository })
+    const second = new Layer('second', { readUser }).provide({ repository: secondRepository })
+    const app = new Layer('app', { first, second })
+    const overridden = app.override({ repository: replacement })
+
+    expect(overridden.providers.repository).toBe(replacement)
+    expect(await overridden.first.readUser.run({ id: '1' })).toBe('replacement-1')
+    expect(await overridden.second.readUser.run({ id: '1' })).toBe('replacement-1')
+    expect(app.providers).toEqual({})
+    expect(first.providers.repository).toBe(firstRepository)
+    expect(second.providers.repository).toBe(secondRepository)
+  })
+
   test('rejects truly absent outer overrides at runtime', () => {
     const users = new Layer('users', { getUser }).provide({
       database: { find: (id: string) => id }
