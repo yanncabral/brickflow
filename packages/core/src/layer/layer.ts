@@ -114,29 +114,57 @@ class LayerImplementation<
             ...((options?.requirements as Readonly<Record<string, unknown>> | undefined) ?? {})
           }),
           resolveDependency: (caller, alias) => {
-            const callerLayerPath = (caller as FlattenedLayerEntry).layerPath
-            const supplied =
-              caller.suppliedDependencies?.[alias] ?? executionRoot.suppliedDependencies?.[alias]
+            const callerLayerPath = (caller as FlattenedLayerEntry).layerPath ?? root.layerPath
+            const suppliedNode = caller.suppliedDependencies?.[alias]
+            const supplied = suppliedNode?.flow ? suppliedNode : undefined
+            const suppliedBranchPath = Object.freeze([...(caller.suppliedPath ?? []), alias])
             const scopedSupplied = supplied
               ? Object.freeze({
                   id: [...(caller.id?.split('.') ?? []), alias].join('.'),
                   key: alias,
                   implementation: supplied.flow,
-                  layerPath: Object.freeze([...(callerLayerPath ?? root.layerPath)]),
-                  suppliedPath: Object.freeze([...(caller.suppliedPath ?? []), alias]),
+                  layerPath: Object.freeze([...callerLayerPath]),
+                  suppliedPath: suppliedBranchPath,
                   ...(supplied.dependencies ? { suppliedDependencies: supplied.dependencies } : {})
                 })
               : undefined
-            if (Array.isArray(callerLayerPath) && callerLayerPath.length > 0) {
+            if (callerLayerPath.length > 0) {
               const layerEntry = findLayerDependency(
                 layer,
                 caller as FlattenedLayerEntry,
                 alias,
                 scopedSupplied as FlattenedLayerEntry | undefined
               )
-              if (layerEntry) return layerEntry
+              if (layerEntry) {
+                const resolvedDependencies =
+                  suppliedNode?.dependencies ?? caller.suppliedDependencies?.[alias]?.dependencies
+                return resolvedDependencies
+                  ? Object.freeze({
+                      ...layerEntry,
+                      suppliedDependencies: resolvedDependencies,
+                      signalPath: Object.freeze(layerEntry.id.split('.')),
+                      ...(caller.suppliedPath || suppliedNode
+                        ? { suppliedPath: suppliedBranchPath }
+                        : {}),
+                      ...(scopedSupplied ? { ownSignalPath: scopedSupplied.suppliedPath } : {})
+                    })
+                  : scopedSupplied
+                    ? Object.freeze({
+                        ...layerEntry,
+                        suppliedPath: scopedSupplied.suppliedPath,
+                        signalPath: Object.freeze(layerEntry.id.split('.')),
+                        ownSignalPath: scopedSupplied.suppliedPath
+                      })
+                    : caller.suppliedPath
+                      ? Object.freeze({
+                          ...layerEntry,
+                          suppliedPath: caller.suppliedPath,
+                          signalPath: Object.freeze(layerEntry.id.split('.'))
+                        })
+                      : layerEntry
+              }
             }
-            if (scopedSupplied) return scopedSupplied
+            if (scopedSupplied) return scopedSupplied as unknown as FlattenedLayerEntry
             throw new Error(`Missing dependency Flow entry "${alias}" in the configured Layer`)
           },
           ...(options?.signals

@@ -410,6 +410,180 @@ describe('Layer-bound Flow execution', () => {
     ).resolves.toBe('nested')
   })
 
+  test('requires and routes only the selected Layer dependency signal namespace', async () => {
+    interface ChildFlow extends Flow {
+      params: undefined
+      result: string
+      signals: { approve: { request: undefined; response: string } }
+    }
+    interface ParentFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { child: ChildFlow }
+    }
+
+    const child = flow<ChildFlow>(async (_params, _requirements, _dependencies, { signals }) =>
+      signals.approve(undefined)
+    )
+    const parent = flow<ParentFlow>(async (_params, _requirements, dependencies) =>
+      dependencies.child(undefined)
+    )
+    const app = new Layer('app', {
+      parent,
+      child,
+      unused: new Layer('unused', { other: child })
+    })
+
+    await expect(
+      Promise.resolve(
+        app.parent.run(undefined, {
+          signals: { app: { child: { approve: () => 'selected' } } }
+        })
+      )
+    ).resolves.toBe('selected')
+  })
+
+  test('uses nested Layer IDs rather than entry keys for selected signal paths', async () => {
+    interface ChildFlow extends Flow {
+      params: undefined
+      result: string
+      signals: { approve: { request: undefined; response: string } }
+    }
+    interface ParentFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { child: ChildFlow }
+    }
+
+    const child = flow<ChildFlow>(async (_params, _requirements, _dependencies, { signals }) =>
+      signals.approve(undefined)
+    )
+    const parent = flow<ParentFlow>(async (_params, _requirements, dependencies) =>
+      dependencies.child(undefined)
+    )
+    const app = new Layer('app', {
+      parent,
+      accounts: new Layer('users', { child })
+    })
+
+    await expect(
+      Promise.resolve(
+        app.parent.run(undefined, {
+          signals: { app: { users: { child: { approve: () => 'users' } } } }
+        })
+      )
+    ).resolves.toBe('users')
+  })
+
+  test('splits supplied own signals from Layer-resolved descendant signals', async () => {
+    interface LeafFlow extends Flow {
+      params: undefined
+      result: string
+      signals: { read: { request: undefined; response: string } }
+    }
+    interface GrandchildFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { leaf: LeafFlow }
+      signals: { refresh: { request: undefined; response: boolean } }
+    }
+    interface ChildFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { grandchild: GrandchildFlow }
+      signals: { approve: { request: undefined; response: boolean } }
+    }
+    interface ParentFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { child: ChildFlow }
+    }
+
+    const leaf = flow<LeafFlow>(async (_params, _requirements, _dependencies, { signals }) =>
+      signals.read(undefined)
+    )
+    const grandchild = flow<GrandchildFlow>(
+      async (_params, _requirements, dependencies, { signals }) => {
+        await signals.refresh(undefined)
+        return dependencies.leaf(undefined)
+      }
+    )
+    const child = flow<ChildFlow>(async (_params, _requirements, dependencies, { signals }) => {
+      await signals.approve(undefined)
+      return dependencies.grandchild(undefined)
+    })
+    const parent = flow<ParentFlow>(async (_params, _requirements, dependencies) =>
+      dependencies.child(undefined)
+    )
+    const app = new Layer('app', { parent, grandchild })
+
+    await expect(
+      Promise.resolve(
+        app.parent.run(undefined, {
+          dependencies: {
+            child: {
+              flow: child,
+              dependencies: {
+                grandchild: { dependencies: { leaf: { flow: leaf } } }
+              }
+            }
+          },
+          signals: {
+            child: {
+              approve: () => true,
+              grandchild: { leaf: { read: () => 'supplied-leaf' } }
+            },
+            app: { grandchild: { refresh: () => true } }
+          }
+        })
+      )
+    ).resolves.toBe('supplied-leaf')
+  })
+
+  test('keeps unresolved descendants independent under selected sibling branches', async () => {
+    interface RepositoryFlow extends Flow {
+      params: undefined
+      result: string
+    }
+    interface BranchFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { repository: RepositoryFlow }
+    }
+    interface ParentFlow extends Flow {
+      params: undefined
+      result: readonly [string, string]
+      depends: { primary: BranchFlow; secondary: BranchFlow }
+    }
+
+    const branch = flow<BranchFlow>(async (_params, _requirements, dependencies) =>
+      dependencies.repository(undefined)
+    )
+    const parent = flow<ParentFlow>(async (_params, _requirements, dependencies) =>
+      Promise.all([dependencies.primary(undefined), dependencies.secondary(undefined)])
+    )
+    const app = new Layer('app', {
+      parent,
+      primary: new Layer('primary', { primary: branch }),
+      secondary: new Layer('secondary', { secondary: branch })
+    })
+
+    await expect(
+      Promise.resolve(
+        app.parent.run(undefined, {
+          dependencies: {
+            primary: {
+              dependencies: { repository: { flow: flow<RepositoryFlow>(() => 'primary') } }
+            },
+            secondary: {
+              dependencies: { repository: { flow: flow<RepositoryFlow>(() => 'secondary') } }
+            }
+          }
+        })
+      )
+    ).resolves.toEqual(['primary', 'secondary'])
+  })
+
   test('uses a supplied dependency when transitive global Layer matches are ambiguous', async () => {
     interface RepositoryFlow extends Flow {
       params: undefined
@@ -450,7 +624,9 @@ describe('Layer-bound Flow execution', () => {
     await expect(
       Promise.resolve(
         app.placeOrder.run(undefined, {
-          dependencies: { repository: { flow: suppliedRepository } }
+          dependencies: {
+            checkout: { dependencies: { repository: { flow: suppliedRepository } } }
+          }
         })
       )
     ).resolves.toBe('supplied')
@@ -526,8 +702,12 @@ describe('Layer-bound Flow execution', () => {
     await expect(
       Promise.resolve(
         app.placeOrder.run(undefined, {
-          dependencies: { repository: { flow: repository('supplied') } },
-          signals: { repository: { refresh: () => 'selected' } }
+          dependencies: {
+            checkout: {
+              dependencies: { repository: { flow: repository('supplied') } }
+            }
+          },
+          signals: { checkout: { repository: { refresh: () => 'selected' } } }
         })
       )
     ).resolves.toBe('selected')
@@ -540,7 +720,10 @@ describe('Layer-bound Flow execution', () => {
     const bound = new Layer('bound', { parent, child: layerChild }).provide({ repository, logger })
 
     await bound.parent
-      .run({ id: 'ada' }, { dependencies: { grandchild: { flow: grandchild } } })
+      .run(
+        { id: 'ada' },
+        { dependencies: { child: { dependencies: { grandchild: { flow: grandchild } } } } }
+      )
       .with(P._, () => 'fallback')
       .then((value) => expect(value).toBe('hello layer-Ada'))
   })

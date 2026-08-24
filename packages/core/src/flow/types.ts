@@ -123,9 +123,17 @@ export type DependencyNode<
   Depth extends readonly unknown[] = []
 > = Depth['length'] extends 16
   ? {
-      readonly flow: AnyFlowImplementation
-      readonly dependencies?: Readonly<Record<string, unknown>>
-    }
+      readonly flow: FlowImplementation<F>
+    } & (keyof DependenciesOf<F> extends never
+      ? { readonly dependencies?: never }
+      : {
+          readonly dependencies: {
+            readonly [Alias in keyof DependenciesOf<F>]: {
+              readonly flow: AnyFlowImplementation
+              readonly dependencies: Readonly<Record<string, unknown>>
+            }
+          }
+        })
   : {
       readonly flow: FlowImplementation<F>
     } & (keyof DependenciesOf<F> extends never

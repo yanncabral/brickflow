@@ -132,7 +132,7 @@ const missingGrandchild = new Layer('missing-grandchild', { configured, child })
 missingGrandchild.configured.run({ id: 'ada' })
 missingGrandchild.configured.run(
   { id: 'ada' },
-  { dependencies: { grandchild: { flow: grandchild } } }
+  { dependencies: { child: { dependencies: { grandchild: { flow: grandchild } } } } }
 )
 
 const nestedProvider = new Layer('nested-provider', { child, grandchild }).provide({
@@ -288,7 +288,9 @@ const ambiguouslyResolvedApp = new Layer('ambiguous-app', {
 // @ts-expect-error checkout's transitive repository alias is globally ambiguous
 ambiguouslyResolvedApp.placeOrder.run(undefined)
 ambiguouslyResolvedApp.placeOrder.run(undefined, {
-  dependencies: { repository: { flow: scopedRepository } }
+  dependencies: {
+    checkout: { dependencies: { repository: { flow: scopedRepository } } }
+  }
 })
 
 const uniquelyResolvedApp = new Layer('unique-app', {
@@ -305,7 +307,9 @@ const transitivelyUnresolvedApp = new Layer('transitively-unresolved-app', {
 // @ts-expect-error genuinely unresolved transitive aliases remain required
 transitivelyUnresolvedApp.placeOrder.run(undefined)
 transitivelyUnresolvedApp.placeOrder.run(undefined, {
-  dependencies: { repository: { flow: scopedRepository } }
+  dependencies: {
+    checkout: { dependencies: { repository: { flow: scopedRepository } } }
+  }
 })
 
 const directlyUnresolvedApp = new Layer('directly-unresolved-app', {
@@ -456,7 +460,112 @@ const depthBoundedLayer = new Layer('depth-bounded', {
 })
 // @ts-expect-error depth exhaustion conservatively retains unresolved aliases
 depthBoundedLayer.depthRoot.run(undefined)
-depthBoundedLayer.depthRoot.run(undefined, { dependencies: { leaf: { flow: depthLeaf } } })
+depthBoundedLayer.depthRoot.run(undefined, {
+  dependencies: {
+    depth1: {
+      dependencies: {
+        depth2: {
+          dependencies: {
+            depth3: {
+              dependencies: {
+                depth4: {
+                  dependencies: {
+                    depth5: {
+                      dependencies: {
+                        depth6: {
+                          dependencies: {
+                            depth7: {
+                              dependencies: {
+                                depth8: {
+                                  dependencies: {
+                                    depth9: {
+                                      dependencies: {
+                                        depth10: {
+                                          dependencies: {
+                                            depth11: {
+                                              dependencies: {
+                                                depth12: {
+                                                  dependencies: {
+                                                    depth13: {
+                                                      dependencies: {
+                                                        depth14: {
+                                                          dependencies: {
+                                                            depth15: {
+                                                              dependencies: {
+                                                                depth16: {
+                                                                  dependencies: {
+                                                                    leaf: {
+                                                                      flow: depthLeaf,
+                                                                      dependencies: {}
+                                                                    }
+                                                                  }
+                                                                }
+                                                              }
+                                                            }
+                                                          }
+                                                        }
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+})
+
+// @ts-expect-error depth fallback does not accept an empty dependency graph
+depthBoundedLayer.depthRoot.run(undefined, { dependencies: {} })
+depthBoundedLayer.depthRoot.run(undefined, {
+  dependencies: {
+    // @ts-expect-error depth fallback requires the known next alias
+    depth1: { dependencies: {} }
+  }
+})
+
+interface BooleanSignalChildFlow extends Flow {
+  params: undefined
+  result: undefined
+  signals: { approve: { request: undefined; response: boolean } }
+}
+interface StringSignalChildFlow extends Flow {
+  params: undefined
+  result: undefined
+  signals: { approve: { request: undefined; response: string } }
+}
+interface BooleanSignalParentFlow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { child: BooleanSignalChildFlow }
+}
+declare const booleanSignalParent: ReturnType<typeof flow<BooleanSignalParentFlow>>
+declare const stringSignalChild: ReturnType<typeof flow<StringSignalChildFlow>>
+booleanSignalParent.run(undefined, {
+  dependencies: {
+    // @ts-expect-error incompatible signal contracts at the same dependency path are rejected
+    child: { flow: stringSignalChild }
+  },
+  signals: { child: { approve: () => true } }
+})
 
 const worker: Worker = {
   start<Result, Failure>(

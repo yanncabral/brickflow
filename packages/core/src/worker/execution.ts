@@ -23,7 +23,7 @@ import { createFlowRun } from './run'
 import type { FlowRun, RunMetadata } from './types'
 
 export interface SuppliedDependencyNode {
-  readonly flow: AnyFlowImplementation
+  readonly flow?: AnyFlowImplementation
   readonly dependencies?: Readonly<Record<string, SuppliedDependencyNode>>
 }
 
@@ -33,6 +33,8 @@ export interface ExecutionEntry {
   readonly implementation: AnyFlowImplementation
   readonly suppliedDependencies?: Readonly<Record<string, SuppliedDependencyNode>>
   readonly suppliedPath?: readonly string[]
+  readonly signalPath?: readonly string[]
+  readonly ownSignalPath?: readonly string[]
 }
 
 interface ExecuteOptions<F extends Flow> {
@@ -69,6 +71,9 @@ async function executeResolvedFlow<F extends Flow>(
       ) => {
         const dependencyId = dependencyEntry.suppliedPath ??
           dependencyEntry.id?.split('.') ?? [dependencyEntry.key]
+        const signalPath = dependencyEntry.signalPath ?? dependencyId
+        const layerPath = signalPath.slice(0, -1)
+        const flowPath = [signalPath.at(-1) ?? dependencyEntry.key]
         const parentSignalHandlers = context.signalHandlers
         const localHandlers = callOptions?.signals
           ? createSignalHandlerChain(
@@ -83,8 +88,8 @@ async function executeResolvedFlow<F extends Flow>(
             )
           : parentSignalHandlers
         const dependencyContext = new ExecutionContext({
-          layerPath: dependencyId.slice(0, -1),
-          flowPath: [dependencyId.at(-1) ?? dependencyEntry.key],
+          layerPath,
+          flowPath,
           callId: context.callId,
           providers: context.providers,
           ...(localHandlers ? { signalHandlers: localHandlers } : {})
@@ -100,7 +105,16 @@ async function executeResolvedFlow<F extends Flow>(
       }
     }
   })
-  const signals = createSignalFunctions(context) as Parameters<
+  const signalContext = entry.ownSignalPath
+    ? new ExecutionContext({
+        layerPath: entry.ownSignalPath.slice(0, -1),
+        flowPath: [entry.ownSignalPath.at(-1) ?? entry.key],
+        callId: context.callId,
+        providers: context.providers,
+        ...(context.signalHandlers ? { signalHandlers: context.signalHandlers } : {})
+      })
+    : context
+  const signals = createSignalFunctions(signalContext) as Parameters<
     typeof executeFlowImplementation<F>
   >[4]
   return executeFlowImplementation(
@@ -142,16 +156,17 @@ export function executeFlow<F extends Flow>(
 
 function createSuppliedEntry(
   key: string,
-  node: SuppliedDependencyNode,
+  flow: AnyFlowImplementation,
+  dependencies: Readonly<Record<string, SuppliedDependencyNode>> | undefined,
   path: readonly string[]
 ): ExecutionEntry {
   const id = [...path, key].join('.')
   return Object.freeze({
     id,
     key,
-    implementation: node.flow,
+    implementation: flow,
     suppliedPath: Object.freeze([...path, key]),
-    ...(node.dependencies ? { suppliedDependencies: node.dependencies } : {})
+    ...(dependencies ? { suppliedDependencies: dependencies } : {})
   })
 }
 
@@ -179,8 +194,8 @@ export function runDirectFlow<F extends Flow>(
     providers: Object.freeze({ ...(options?.requirements ?? {}) }),
     resolveDependency: (caller, alias) => {
       const node = caller.suppliedDependencies?.[alias]
-      if (!node) throw new Error(`Missing direct dependency Flow "${alias}"`)
-      return createSuppliedEntry(alias, node, caller.id?.split('.') ?? [])
+      if (!node?.flow) throw new Error(`Missing direct dependency Flow "${alias}"`)
+      return createSuppliedEntry(alias, node.flow, node.dependencies, caller.id?.split('.') ?? [])
     },
     directSignals: true,
     ...(options?.signals ? { signals: options.signals } : {}),

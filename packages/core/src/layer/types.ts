@@ -2,7 +2,6 @@ import type { Flow } from '../flow/contract'
 import type {
   AnyFlowImplementation,
   DependenciesOf,
-  DependencyNode,
   EffectiveErrorsOf,
   EffectiveRequirementsOf,
   FlowImplementation,
@@ -10,9 +9,11 @@ import type {
   FlowSignalHandlers,
   ParamsOf,
   RequirementsOf,
-  ResultOf
+  ResultOf,
+  SignalsOf
 } from '../flow/types'
-import type { FlowRun, LayerSignalHandlers } from '../worker/types'
+import type { BoundarySignalHandlers, SignalDefinitions } from '../signal/types'
+import type { FlowRun } from '../worker/types'
 
 export type Providers = Readonly<Record<string, unknown>>
 export interface AnyLayer {
@@ -133,8 +134,11 @@ type FlattenedFlowEntryForAlias<
           readonly scope: Entries
         }
       : never
-    : Entries[Key] extends { readonly entries: infer Nested extends LayerEntries }
-      ? FlattenedFlowEntryForAlias<Nested, Alias, readonly [...Path, Key]>
+    : Entries[Key] extends {
+          readonly id: infer Id extends PropertyKey
+          readonly entries: infer Nested extends LayerEntries
+        }
+      ? FlattenedFlowEntryForAlias<Nested, Alias, readonly [...Path, Id]>
       : never
 }[keyof Entries]
 
@@ -156,6 +160,69 @@ type ResolvedFlowEntry<
   Alias extends PropertyKey,
   Direct = DirectFlowEntryForAlias<ScopeEntries, Alias>
 > = [Direct] extends [never] ? UniqueGlobalFlowEntryForAlias<RootEntries, Alias> : Direct
+
+type OwnSignalHandlers<F extends Flow> =
+  SignalsOf<F> extends SignalDefinitions
+    ? keyof SignalsOf<F> extends never
+      ? Record<never, never>
+      : BoundarySignalHandlers<SignalsOf<F>>
+    : Record<never, never>
+
+type NamespacedSignalHandlers<
+  Path extends readonly PropertyKey[],
+  Handlers
+> = keyof Handlers extends never
+  ? Record<never, never>
+  : Path extends readonly [
+        infer Head extends PropertyKey,
+        ...infer Tail extends readonly PropertyKey[]
+      ]
+    ? { readonly [Key in Head]: NamespacedSignalHandlers<Tail, Handlers> }
+    : Handlers
+
+type ResolvedSignalHandlers<
+  RootEntries extends LayerEntries,
+  Alias extends PropertyKey,
+  Resolved
+> = Resolved extends {
+  readonly path: infer Path extends readonly PropertyKey[]
+  readonly implementation: FlowImplementation<infer ResolvedFlow extends Flow>
+  readonly scope: infer ResolvedScope extends LayerEntries
+}
+  ? NamespacedSignalHandlers<
+      Path,
+      OwnSignalHandlers<ResolvedFlow> &
+        OwnSelectedSignalHandlers<RootEntries, ResolvedScope, ResolvedFlow>
+    >
+  : Resolved extends {
+        readonly implementation: FlowImplementation<infer ResolvedFlow extends Flow>
+        readonly scope: infer ResolvedScope extends LayerEntries
+      }
+    ? NamespacedSignalHandlers<
+        readonly [Alias],
+        OwnSignalHandlers<ResolvedFlow> &
+          OwnSelectedSignalHandlers<RootEntries, ResolvedScope, ResolvedFlow>
+      >
+    : Record<never, never>
+
+type OwnSelectedSignalHandlers<
+  RootEntries extends LayerEntries,
+  ScopeEntries extends LayerEntries,
+  F extends Flow,
+  Depth extends readonly unknown[] = []
+> = Depth['length'] extends 16
+  ? Record<never, never>
+  : UnionToIntersection<
+      {
+        readonly [Alias in keyof DependenciesOf<F>]: ResolvedFlowEntry<
+          RootEntries,
+          ScopeEntries,
+          Alias
+        > extends infer Resolved
+          ? ResolvedSignalHandlers<RootEntries, Alias, Resolved>
+          : Record<never, never>
+      }[keyof DependenciesOf<F>]
+    >
 
 type HasIncompatibleDependencyAlias<
   RootEntries extends LayerEntries,
@@ -232,15 +299,13 @@ type SuppliedDependencyNode<
   ScopeEntries extends LayerEntries,
   F extends Flow,
   Depth extends readonly unknown[]
-> = Depth['length'] extends 16
-  ? DependencyNode<F, Depth>
+> = {
+  readonly flow: FlowImplementation<F>
+} & (keyof ScopedUnresolvedDependencies<RootEntries, ScopeEntries, F, Depth> extends never
+  ? { readonly dependencies?: never }
   : {
-      readonly flow: FlowImplementation<F>
-    } & (keyof ScopedUnresolvedDependencies<RootEntries, ScopeEntries, F, Depth> extends never
-      ? { readonly dependencies?: never }
-      : {
-          readonly dependencies: ScopedUnresolvedDependencies<RootEntries, ScopeEntries, F, Depth>
-        })
+      readonly dependencies: ScopedUnresolvedDependencies<RootEntries, ScopeEntries, F, Depth>
+    })
 
 type UnresolvedDirectDependency<
   RootEntries extends LayerEntries,
@@ -276,7 +341,13 @@ type UnresolvedDependencyBranch<
             ResolvedScope,
             ResolvedFlow,
             [...Depth, unknown]
-          >
+          > extends infer Children
+          ? keyof Children extends never
+            ? Record<never, never>
+            : string extends keyof Children
+              ? Children
+              : { readonly [Key in Alias]: { readonly dependencies: Children } }
+          : Record<never, never>
         : UnresolvedDirectDependency<RootEntries, ScopeEntries, F, Alias, Depth>
     : UnresolvedDirectDependency<RootEntries, ScopeEntries, F, Alias, Depth>
 
@@ -286,9 +357,12 @@ type ScopedUnresolvedDependencies<
   F extends Flow,
   Depth extends readonly unknown[] = []
 > = Depth['length'] extends 16
-  ? Readonly<
-      Record<string, { readonly flow: AnyFlowImplementation; readonly dependencies?: unknown }>
-    >
+  ? {
+      readonly [Alias in keyof DependenciesOf<F>]: {
+        readonly flow: AnyFlowImplementation
+        readonly dependencies: Readonly<Record<string, unknown>>
+      }
+    }
   : UnionToIntersection<
       {
         readonly [Alias in keyof DependenciesOf<F>]: UnresolvedDependencyBranch<
@@ -307,20 +381,55 @@ type UnresolvedDependencies<
   F extends Flow
 > = ScopedUnresolvedDependencies<RootEntries, ScopeEntries, F>
 
+type SuppliedNodeSignalHandlers<Node> = Node extends {
+  readonly flow: FlowImplementation<infer F extends Flow>
+  readonly dependencies?: infer Dependencies
+}
+  ? OwnSignalHandlers<F> & SuppliedDependencySignalHandlers<Dependencies>
+  : Node extends { readonly dependencies: infer Dependencies }
+    ? SuppliedDependencySignalHandlers<Dependencies>
+    : Record<never, never>
+
+type LayerSignalHandlersForDependencies<
+  RootEntries extends LayerEntries,
+  ScopeEntries extends LayerEntries,
+  F extends Flow,
+  Deps
+> = UnionToIntersection<
+  {
+    readonly [Alias in keyof DependenciesOf<F>]: Alias extends keyof Deps
+      ? Deps[Alias] extends {
+          readonly flow: FlowImplementation<infer SuppliedFlow extends Flow>
+        }
+        ? LayerSignalHandlersForDependencies<
+            RootEntries,
+            ScopeEntries,
+            SuppliedFlow,
+            Deps[Alias] extends { readonly dependencies: infer SuppliedDependencies }
+              ? SuppliedDependencies
+              : Record<never, never>
+          >
+        : ResolvedSignalHandlers<
+            RootEntries,
+            Alias,
+            ResolvedFlowEntry<RootEntries, ScopeEntries, Alias>
+          >
+      : ResolvedSignalHandlers<
+            RootEntries,
+            Alias,
+            ResolvedFlowEntry<RootEntries, ScopeEntries, Alias>
+          > extends infer Handlers
+        ? Handlers
+        : Record<never, never>
+  }[keyof DependenciesOf<F>]
+>
+
 type SuppliedDependencySignalHandlers<Deps> = string extends keyof Deps
   ? Record<never, never>
   : {
-      readonly [Alias in keyof Deps as Deps[Alias] extends {
-        readonly flow: FlowImplementation<infer F extends Flow>
-      }
-        ? keyof FlowSignalHandlers<F> extends never
-          ? never
-          : Alias
-        : never]: Deps[Alias] extends {
-        readonly flow: FlowImplementation<infer F extends Flow>
-      }
-        ? FlowSignalHandlers<F>
-        : never
+      readonly [Alias in keyof Deps as keyof SuppliedNodeSignalHandlers<Deps[Alias]> extends never
+        ? never
+        : Alias]: SuppliedNodeSignalHandlers<Deps[Alias]>
     }
 
 type BoundFlowRunOptions<
@@ -328,7 +437,8 @@ type BoundFlowRunOptions<
   RootId extends string,
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
-  Provided extends Providers
+  Provided extends Providers,
+  FlowPath extends readonly PropertyKey[]
 > = Omit<FlowRunOptions<F>, 'requirements' | 'dependencies' | 'signals'> &
   (keyof Omit<EffectiveRequirementsOf<F>, keyof Provided> extends never
     ? { readonly requirements?: never }
@@ -336,14 +446,28 @@ type BoundFlowRunOptions<
   (keyof UnresolvedDependencies<RootEntries, ScopeEntries, F> extends never
     ? { readonly dependencies?: never }
     : { readonly dependencies: UnresolvedDependencies<RootEntries, ScopeEntries, F> }) &
-  (keyof FlowSignalHandlers<F> extends never
+  (keyof (OwnSignalHandlers<F> &
+    LayerSignalHandlersForDependencies<
+      RootEntries,
+      ScopeEntries,
+      F,
+      UnresolvedDependencies<RootEntries, ScopeEntries, F>
+    > &
+    SuppliedDependencySignalHandlers<
+      UnresolvedDependencies<RootEntries, ScopeEntries, F>
+    >) extends never
     ? { readonly signals?: never }
     : {
-        readonly signals: LayerSignalHandlers<
-          LayerState<RootId, RootEntries, Provided>,
-          F,
-          keyof UnresolvedDependencies<RootEntries, ScopeEntries, F>
-        > &
+        readonly signals: NamespacedSignalHandlers<FlowPath, OwnSignalHandlers<F>> &
+          NamespacedSignalHandlers<
+            readonly [RootId],
+            LayerSignalHandlersForDependencies<
+              RootEntries,
+              ScopeEntries,
+              F,
+              UnresolvedDependencies<RootEntries, ScopeEntries, F>
+            >
+          > &
           SuppliedDependencySignalHandlers<UnresolvedDependencies<RootEntries, ScopeEntries, F>>
       })
 
@@ -352,26 +476,45 @@ type BoundFlowRunOptionArgs<
   RootId extends string,
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
-  Provided extends Providers
+  Provided extends Providers,
+  FlowPath extends readonly PropertyKey[]
 > = keyof Omit<EffectiveRequirementsOf<F>, keyof Provided> extends never
   ? keyof UnresolvedDependencies<RootEntries, ScopeEntries, F> extends never
-    ? keyof FlowSignalHandlers<F> extends never
-      ? readonly [options?: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided>]
-      : readonly [options: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided>]
-    : readonly [options: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided>]
-  : readonly [options: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided>]
+    ? keyof (OwnSignalHandlers<F> &
+        LayerSignalHandlersForDependencies<
+          RootEntries,
+          ScopeEntries,
+          F,
+          UnresolvedDependencies<RootEntries, ScopeEntries, F>
+        > &
+        SuppliedDependencySignalHandlers<
+          UnresolvedDependencies<RootEntries, ScopeEntries, F>
+        >) extends never
+      ? readonly [
+          options?: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided, FlowPath>
+        ]
+      : readonly [
+          options: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided, FlowPath>
+        ]
+    : readonly [
+        options: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided, FlowPath>
+      ]
+  : readonly [
+      options: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided, FlowPath>
+    ]
 
 export type BoundFlow<
   F extends Flow,
   RootId extends string,
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
-  Provided extends Providers
+  Provided extends Providers,
+  FlowPath extends readonly PropertyKey[]
 > = {
   readonly handler: FlowImplementation<F>['handler']
   run(
     params: ParamsOf<F>,
-    ...options: BoundFlowRunOptionArgs<F, RootId, RootEntries, ScopeEntries, Provided>
+    ...options: BoundFlowRunOptionArgs<F, RootId, RootEntries, ScopeEntries, Provided, FlowPath>
   ): FlowRun<EffectiveErrorsOf<F>, ResultOf<F>>
 }
 
@@ -379,12 +522,21 @@ type BoundEntries<
   RootId extends string,
   RootEntries extends LayerEntries,
   Entries extends LayerEntries,
-  EffectiveProvided extends Providers
+  EffectiveProvided extends Providers,
+  LayerPath extends readonly PropertyKey[]
 > = {
   readonly [Key in keyof Entries]: Entries[Key] extends FlowImplementation<infer F extends Flow>
-    ? BoundFlow<F, RootId, RootEntries, Entries, EffectiveProvided>
+    ? BoundFlow<F, RootId, RootEntries, Entries, EffectiveProvided, readonly [...LayerPath, Key]>
     : Entries[Key] extends Layer<infer Id, infer Nested, infer NestedProvided>
-      ? BoundLayer<Id, Nested, NestedProvided, RootEntries, RootId, EffectiveProvided>
+      ? BoundLayer<
+          Id,
+          Nested,
+          NestedProvided,
+          RootEntries,
+          RootId,
+          EffectiveProvided,
+          readonly [...LayerPath, Id]
+        >
       : never
 }
 
@@ -394,9 +546,10 @@ export type BoundLayer<
   Provided extends Providers,
   RootEntries extends LayerEntries = Entries,
   RootId extends string = Id,
-  EffectiveProvided extends Providers = EffectiveLayerProviders<Entries, Provided>
+  EffectiveProvided extends Providers = EffectiveLayerProviders<Entries, Provided>,
+  LayerPath extends readonly PropertyKey[] = readonly [Id]
 > = LayerState<Id, Entries, Provided> &
-  BoundEntries<RootId, RootEntries, Entries, EffectiveProvided>
+  BoundEntries<RootId, RootEntries, Entries, EffectiveProvided, LayerPath>
 
 export interface LayerState<
   Id extends string = string,
