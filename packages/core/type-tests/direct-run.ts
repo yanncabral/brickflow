@@ -131,6 +131,73 @@ signalledLayer.signalled.run(
 // @ts-expect-error bound signal handlers are required
 signalledLayer.signalled.run({ id: 'ada' })
 
+interface SuppliedSignalledChildFlow extends Flow {
+  params: { id: string }
+  result: boolean
+  signals: { approve: { request: { id: string }; response: boolean } }
+}
+
+interface SuppliedSignalledParentFlow extends Flow {
+  params: { id: string }
+  result: boolean
+  depends: { child: SuppliedSignalledChildFlow }
+}
+
+const suppliedSignalledChild = flow<SuppliedSignalledChildFlow>(
+  async ({ id }, _requirements, _dependencies, { signals }) => signals.approve({ id })
+)
+const suppliedSignalledParent = flow<SuppliedSignalledParentFlow>(
+  async ({ id }, _requirements, { child }) => child({ id })
+)
+const suppliedSignalsApp = new Layer('app', { parent: suppliedSignalledParent })
+
+suppliedSignalsApp.parent.run(
+  { id: 'ada' },
+  {
+    dependencies: { child: suppliedSignalledChild },
+    signals: { child: { approve: ({ id }) => id === 'ada' } }
+  }
+)
+suppliedSignalsApp.parent.run(
+  { id: 'ada' },
+  {
+    dependencies: { child: suppliedSignalledChild },
+    // @ts-expect-error supplied dependency signal handlers remain required
+    signals: {}
+  }
+)
+
+interface MixedSignalledParentFlow extends Flow {
+  params: { id: string }
+  result: boolean
+  depends: { child: SuppliedSignalledChildFlow }
+  signals: { confirm: { request: { id: string }; response: boolean } }
+}
+
+const mixedSignalledParent = flow<MixedSignalledParentFlow>(
+  async ({ id }, _requirements, { child }, { signals }) =>
+    (await signals.confirm({ id })) && child({ id })
+)
+const mixedSignalsApp = new Layer('app', { parent: mixedSignalledParent })
+mixedSignalsApp.parent.run(
+  { id: 'ada' },
+  {
+    dependencies: { child: suppliedSignalledChild },
+    signals: {
+      app: { parent: { confirm: ({ id }) => id === 'ada' } },
+      child: { approve: ({ id }) => id === 'ada' }
+    }
+  }
+)
+mixedSignalsApp.parent.run(
+  { id: 'ada' },
+  {
+    dependencies: { child: suppliedSignalledChild },
+    // @ts-expect-error mixed signal handlers require the Layer-resolved namespace
+    signals: { child: { approve: ({ id }) => id === 'ada' } }
+  }
+)
+
 const app = new Layer('app', { nested: complete })
 const nestedResult: string = await app.nested.configured.run({ id: 'ada' })
 void nestedResult

@@ -53,12 +53,17 @@ type SignalsForEntries<Entries extends LayerEntries, Included> = {
     : Key]: EntrySignalHandlers<Entries[Key], Included>
 }
 
-export type LayerSignalHandlers<Layer extends Pick<AnyLayer, 'id' | 'entries'>, F extends Flow> = {
-  readonly [Id in Layer['id']]: SignalsForEntries<
-    LayerEntriesOf<Layer>,
-    GraphImplementations<LayerEntriesOf<Layer>[keyof LayerEntriesOf<Layer>], F>
-  >
-}
+type LayerSignalTree<Layer extends Pick<AnyLayer, 'entries'>, F extends Flow> = SignalsForEntries<
+  LayerEntriesOf<Layer>,
+  GraphImplementations<LayerEntriesOf<Layer>[keyof LayerEntriesOf<Layer>], F>
+>
+
+export type LayerSignalHandlers<
+  Layer extends Pick<AnyLayer, 'id' | 'entries'>,
+  F extends Flow
+> = keyof LayerSignalTree<Layer, F> extends never
+  ? Record<never, never>
+  : { readonly [Id in Layer['id']]: LayerSignalTree<Layer, F> }
 
 export interface FlowRunControls {
   readonly id: string

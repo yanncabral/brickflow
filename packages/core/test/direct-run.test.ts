@@ -326,6 +326,39 @@ describe('Layer-bound Flow execution', () => {
     ).resolves.toBe('supplied')
   })
 
+  test('resolves signals for a supplied-only dependency without an empty Layer namespace', async () => {
+    interface SignalledChildFlow extends Flow {
+      params: { id: string }
+      result: boolean
+      signals: { approve: { request: { id: string }; response: boolean } }
+    }
+    interface SignalledParentFlow extends Flow {
+      params: { id: string }
+      result: boolean
+      depends: { child: SignalledChildFlow }
+    }
+
+    const signalledChild = flow<SignalledChildFlow>(
+      async ({ id }, _requirements, _dependencies, { signals }) => signals.approve({ id })
+    )
+    const signalledParent = flow<SignalledParentFlow>(async ({ id }, _requirements, { child }) =>
+      child({ id })
+    )
+    const app = new Layer('app', { parent: signalledParent })
+
+    await expect(
+      Promise.resolve(
+        app.parent.run(
+          { id: 'ada' },
+          {
+            dependencies: { child: signalledChild },
+            signals: { child: { approve: ({ id }) => id === 'ada' } }
+          }
+        )
+      )
+    ).resolves.toBe(true)
+  })
+
   test('accepts unresolved dependency aliases and gives scoped Layer entries precedence', async () => {
     const layerChild = flow<ChildFlow>(async ({ id }, { repository }, { grandchild }) =>
       grandchild({ id: `layer-${repository.find(id)}` })
