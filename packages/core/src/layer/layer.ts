@@ -172,11 +172,13 @@ class LayerImplementation<
   }
 
   provide(values: Readonly<Record<string, unknown>>): AnyLayer {
-    return new LayerImplementation(this.id, this.entries, addProviders(this.providers, values))
+    addProviders(effectiveLayerProviders(this), values)
+    return new LayerImplementation(this.id, this.entries, { ...this.providers, ...values })
   }
 
   override(values: Readonly<Record<string, unknown>>): AnyLayer {
-    return new LayerImplementation(this.id, this.entries, overrideProviders(this.providers, values))
+    overrideProviders(effectiveLayerProviders(this), values)
+    return new LayerImplementation(this.id, this.entries, { ...this.providers, ...values })
   }
 }
 

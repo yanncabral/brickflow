@@ -137,6 +137,35 @@ oneLevelTransitiveOverridden.nested.transitiveRequirement.run(undefined, {
 // @ts-expect-error overrides validate nested transitive requirement values
 oneLevelTransitiveProvided.override({ repository: 1 })
 
+const postgresRepository: Repository = { get: (id) => `postgres-${id}` }
+const memoryRepository: Repository = { get: (id) => `memory-${id}` }
+const nestedRepositoryProvided = new Layer('nested-repository-provided', {
+  repositoryWorker
+}).provide({
+  repository: postgresRepository
+})
+const outerRepositoryProvided = new Layer('outer-repository-provided', {
+  nested: nestedRepositoryProvided
+})
+
+// @ts-expect-error nested effective provider keys cannot be provided again with a correct value
+outerRepositoryProvided.provide({ repository: memoryRepository })
+// @ts-expect-error nested effective provider keys cannot be provided again with an incorrect value
+outerRepositoryProvided.provide({ repository: 1 })
+// @ts-expect-error exact empty provider maps reject arbitrary extra keys
+outerRepositoryProvided.provide({ arbitrary: true })
+
+const outerRepositoryOverridden = outerRepositoryProvided.override({
+  repository: memoryRepository
+})
+outerRepositoryOverridden.providers.repository satisfies Repository
+outerRepositoryOverridden.nested.repositoryWorker.run(undefined)
+
+// @ts-expect-error nested effective overrides validate the effective requirement value
+outerRepositoryProvided.override({ repository: 1 })
+// @ts-expect-error truly absent provider keys cannot be overridden
+outerRepositoryProvided.override({ arbitrary: true })
+
 interface ConflictingTransitiveRepositoryFlow extends Flow {
   params: undefined
   result: undefined

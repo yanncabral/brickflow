@@ -64,6 +64,38 @@ describe('Layer', () => {
     )
   })
 
+  test('overrides nested effective providers at the outer layer without mutation', async () => {
+    interface ReadUserFlow extends Flow {
+      params: { id: string }
+      result: string
+      requires: { repository: { get(id: string): string } }
+    }
+
+    const readUser = flow<ReadUserFlow>(({ id }, { repository }) => repository.get(id))
+    const postgres = { get: (id: string) => `postgres-${id}` }
+    const memory = { get: (id: string) => `memory-${id}` }
+    const users = new Layer('users', { readUser }).provide({ repository: postgres })
+    const app = new Layer('app', { users })
+    const testApp = app.override({ repository: memory })
+
+    expect(await app.users.readUser.run({ id: '1' })).toBe('postgres-1')
+    expect(await testApp.users.readUser.run({ id: '1' })).toBe('memory-1')
+    expect(testApp.providers).toEqual({ repository: memory })
+    expect(app.providers).toEqual({})
+    expect(users.providers).toEqual({ repository: postgres })
+  })
+
+  test('rejects truly absent outer overrides at runtime', () => {
+    const users = new Layer('users', { getUser }).provide({
+      database: { find: (id: string) => id }
+    })
+    const app = new Layer('app', { users })
+
+    expect(() => app.override({ missing: true } as never)).toThrow(
+      /cannot override absent provider key.*missing/i
+    )
+  })
+
   test('rejects invalid entries and reserved entry names', () => {
     expect(() => new Layer('invalid', { value: {} } as never)).toThrow(
       /invalid layer entry.*value/i

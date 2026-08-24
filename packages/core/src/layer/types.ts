@@ -20,8 +20,8 @@ export interface AnyLayer {
   readonly id: string
   readonly entries: Readonly<Record<string, unknown>>
   readonly providers: Readonly<Record<string, unknown>>
-  readonly provide?: (values: Readonly<Record<string, unknown>>) => AnyLayer
-  readonly override?: (values: Readonly<Record<string, unknown>>) => AnyLayer
+  provide?(values: Readonly<Record<string, unknown>>): AnyLayer
+  override?(values: Readonly<Record<string, unknown>>): AnyLayer
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: heterogeneous Flow implementations are intentionally erased at Layer boundaries
@@ -212,6 +212,20 @@ export type EffectiveLayerProviders<
   Provided extends Providers
 > = Provided & Omit<UnionToIntersection<ProviderUnion<Entries>>, keyof Provided>
 
+type ExactKeys<Values, Allowed> = Values & Record<Exclude<keyof Values, keyof Allowed>, never>
+
+type ProvideValues<Entries extends LayerEntries, Provided extends Providers> = Partial<
+  Omit<EffectiveRequirementsFromEntries<Entries>, keyof EffectiveLayerProviders<Entries, Provided>>
+>
+
+type OverrideValues<Entries extends LayerEntries, Provided extends Providers> = Partial<
+  Pick<
+    EffectiveRequirementsFromEntries<Entries>,
+    keyof EffectiveLayerProviders<Entries, Provided> &
+      keyof EffectiveRequirementsFromEntries<Entries>
+  >
+>
+
 type DependencyFlow<Value> = Value extends Flow ? Value : never
 
 type DirectDependencyImplementations<F extends Flow> = {
@@ -375,22 +389,12 @@ export interface LayerState<
   readonly id: Id
   readonly entries: Readonly<Entries>
   readonly providers: Readonly<Provided>
-  provide<
-    const Values extends Partial<
-      Omit<
-        EffectiveRequirementsFromEntries<Entries>,
-        keyof EffectiveLayerProviders<Entries, Provided>
-      >
-    >
-  >(values: Values): BoundLayer<Id, Entries, Provided & Values>
-  override<
-    const Values extends Partial<
-      Pick<
-        EffectiveRequirementsFromEntries<Entries>,
-        keyof Provided & keyof EffectiveRequirementsFromEntries<Entries>
-      >
-    >
-  >(values: Values): BoundLayer<Id, Entries, Omit<Provided, keyof Values> & Values>
+  provide<const Values extends ProvideValues<Entries, Provided>>(
+    values: ExactKeys<Values, ProvideValues<Entries, Provided>>
+  ): BoundLayer<Id, Entries, Provided & Values>
+  override<const Values extends OverrideValues<Entries, Provided>>(
+    values: ExactKeys<Values, OverrideValues<Entries, Provided>>
+  ): BoundLayer<Id, Entries, Omit<Provided, keyof Values> & Values>
 }
 
 export type Layer<
