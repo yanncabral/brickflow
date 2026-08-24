@@ -172,6 +172,12 @@ const locallyResolvedApp = new Layer('app', {
 })
 locallyResolvedApp.placeOrder.run(undefined)
 
+const suppliedCheckoutApp = new Layer('supplied-checkout-app', {
+  placeOrder: scopedPlaceOrder,
+  repository: scopedRepository
+})
+suppliedCheckoutApp.placeOrder.run(undefined, { dependencies: { checkout: scopedCheckout } })
+
 const checkoutWithoutRepository = new Layer('checkout-without-repository', {
   checkout: scopedCheckout
 })

@@ -113,20 +113,25 @@ class LayerImplementation<
             ...((options?.requirements as Readonly<Record<string, unknown>> | undefined) ?? {})
           }),
           resolveDependency: (caller, alias) => {
+            const callerLayerPath = (caller as FlattenedLayerEntry).layerPath
             const supplied = suppliedDependencies.find((candidate) => candidate.key === alias)
-            if (
-              Array.isArray((caller as FlattenedLayerEntry).layerPath) &&
-              (caller as FlattenedLayerEntry).layerPath.length > 0
-            ) {
+            const scopedSupplied =
+              supplied && Array.isArray(callerLayerPath)
+                ? Object.freeze({
+                    ...supplied,
+                    layerPath: Object.freeze([...callerLayerPath])
+                  })
+                : supplied
+            if (Array.isArray(callerLayerPath) && callerLayerPath.length > 0) {
               const layerEntry = findLayerDependency(
                 layer,
                 caller as FlattenedLayerEntry,
                 alias,
-                supplied
+                scopedSupplied
               )
               if (layerEntry) return layerEntry
             }
-            if (supplied) return supplied
+            if (scopedSupplied) return scopedSupplied
             throw new Error(`Missing dependency Flow entry "${alias}" in the configured Layer`)
           },
           ...(options?.signals

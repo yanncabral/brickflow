@@ -201,6 +201,72 @@ describe('Layer-bound Flow execution', () => {
     await expect(Promise.resolve(app.placeOrder.run(undefined))).resolves.toBe('checkout')
   })
 
+  test('resolves transitive Layer dependencies from a supplied Flow caller scope', async () => {
+    interface GrandchildFlow extends Flow {
+      params: undefined
+      result: string
+    }
+    interface ChildFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { grandchild: GrandchildFlow }
+    }
+    interface ParentFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { child: ChildFlow }
+    }
+
+    const suppliedChild = flow<ChildFlow>(async (_params, _requirements, dependencies) =>
+      dependencies.grandchild(undefined)
+    )
+    const bound = new Layer('bound', {
+      parent: flow<ParentFlow>(async (_params, _requirements, dependencies) =>
+        dependencies.child(undefined)
+      ),
+      grandchild: flow<GrandchildFlow>(() => 'layer')
+    })
+
+    await expect(
+      Promise.resolve(bound.parent.run(undefined, { dependencies: { child: suppliedChild } }))
+    ).resolves.toBe('layer')
+  })
+
+  test('resolves a supplied Flow transitive dependency from its nested caller scope', async () => {
+    interface GrandchildFlow extends Flow {
+      params: undefined
+      result: string
+    }
+    interface ChildFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { grandchild: GrandchildFlow }
+    }
+    interface ParentFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { child: ChildFlow }
+    }
+
+    const suppliedChild = flow<ChildFlow>(async (_params, _requirements, dependencies) =>
+      dependencies.grandchild(undefined)
+    )
+    const nested = new Layer('nested', {
+      parent: flow<ParentFlow>(async (_params, _requirements, dependencies) =>
+        dependencies.child(undefined)
+      ),
+      grandchild: flow<GrandchildFlow>(() => 'nested')
+    })
+    const elsewhere = new Layer('elsewhere', {
+      grandchild: flow<GrandchildFlow>(() => 'elsewhere')
+    })
+    const app = new Layer('app', { nested, elsewhere })
+
+    await expect(
+      Promise.resolve(app.nested.parent.run(undefined, { dependencies: { child: suppliedChild } }))
+    ).resolves.toBe('nested')
+  })
+
   test('uses a supplied dependency when transitive global Layer matches are ambiguous', async () => {
     interface RepositoryFlow extends Flow {
       params: undefined

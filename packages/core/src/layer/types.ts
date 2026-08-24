@@ -220,11 +220,19 @@ type DirectDependencyImplementations<F extends Flow> = {
   >
 }
 
-type UnresolvedDirectDependency<F extends Flow, Alias extends keyof DependenciesOf<F>> = Pick<
-  DirectDependencyImplementations<F>,
-  Alias
-> &
-  EffectiveDependenciesOf<DependencyFlow<DependenciesOf<F>[Alias]>>
+type UnresolvedDirectDependency<
+  RootEntries extends LayerEntries,
+  ScopeEntries extends LayerEntries,
+  F extends Flow,
+  Alias extends keyof DependenciesOf<F>,
+  Depth extends readonly unknown[]
+> = Pick<DirectDependencyImplementations<F>, Alias> &
+  ScopedUnresolvedDependencies<
+    RootEntries,
+    ScopeEntries,
+    DependencyFlow<DependenciesOf<F>[Alias]>,
+    [...Depth, unknown]
+  >
 
 type UnresolvedDependencyBranch<
   RootEntries extends LayerEntries,
@@ -235,7 +243,7 @@ type UnresolvedDependencyBranch<
 > =
   ResolvedFlowEntry<RootEntries, ScopeEntries, Alias> extends infer Resolved
     ? [Resolved] extends [never]
-      ? UnresolvedDirectDependency<F, Alias>
+      ? UnresolvedDirectDependency<RootEntries, ScopeEntries, F, Alias, Depth>
       : Resolved extends {
             readonly implementation: FlowImplementation<infer ResolvedFlow extends Flow>
             readonly scope: infer ResolvedScope extends LayerEntries
@@ -246,8 +254,8 @@ type UnresolvedDependencyBranch<
             ResolvedFlow,
             [...Depth, unknown]
           >
-        : UnresolvedDirectDependency<F, Alias>
-    : UnresolvedDirectDependency<F, Alias>
+        : UnresolvedDirectDependency<RootEntries, ScopeEntries, F, Alias, Depth>
+    : UnresolvedDirectDependency<RootEntries, ScopeEntries, F, Alias, Depth>
 
 type ScopedUnresolvedDependencies<
   RootEntries extends LayerEntries,
