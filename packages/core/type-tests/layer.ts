@@ -65,6 +65,19 @@ declare const applicationWithNestedProviderMap: LayerProvidersOf<
 // @ts-expect-error LayerProvidersOf only includes providers directly attached to the Layer
 applicationWithNestedProviderMap.logger
 
+type Equal<Left, Right> =
+  (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
+    ? true
+    : false
+type Expect<Value extends true> = Value
+
+type _NestedDatabaseIsProvided = Expect<
+  Equal<keyof LayerUnprovidedRequirementsOf<typeof applicationWithNestedProviders>, never>
+>
+type _NestedProviderIsNotDirect = Expect<
+  Equal<keyof LayerProvidersOf<typeof applicationWithNestedProviders>, never>
+>
+
 // @ts-expect-error duplicate inline provider key is rejected
 withDatabase.provide({ database })
 // @ts-expect-error only already-provided keys can be overridden
@@ -104,6 +117,13 @@ const oneLevelTransitiveLayer = new Layer('one-level-transitive', {
 const twoLevelTransitiveLayer = new Layer('two-level-transitive', {
   nested: oneLevelTransitiveLayer
 })
+
+type _TransitiveRepositoryRemainsUnprovided = Expect<
+  Equal<
+    LayerUnprovidedRequirementsOf<typeof twoLevelTransitiveLayer>,
+    Readonly<{ repository: Repository }>
+  >
+>
 
 // Direct Flow effective requirements validate transitive provider values.
 // @ts-expect-error transitive provider must satisfy Repository

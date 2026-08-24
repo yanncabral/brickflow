@@ -8,7 +8,7 @@ import {
   isLayer,
   LayerRuntime
 } from './composition'
-import { addProviders, overrideProviders } from './provide'
+import { addProviders } from './provide'
 import type {
   AnyLayer,
   FlattenedLayerEntry,
@@ -20,6 +20,11 @@ import type {
 
 function flowIdentity(value: FlowImplementation): FlowImplementation {
   return value
+}
+
+function hasProviderKey(layer: AnyLayer, key: string): boolean {
+  if (Object.hasOwn(layer.providers, key)) return true
+  return Object.values(layer.entries).some((entry) => isLayer(entry) && hasProviderKey(entry, key))
 }
 
 const reservedNames: ReadonlySet<ReservedLayerEntryName> = new Set([
@@ -177,7 +182,11 @@ class LayerImplementation<
   }
 
   override(values: Readonly<Record<string, unknown>>): AnyLayer {
-    overrideProviders(effectiveLayerProviders(this), values)
+    for (const key of Object.keys(values)) {
+      if (!hasProviderKey(this, key)) {
+        throw new Error(`Cannot override absent provider key: ${key}`)
+      }
+    }
     return new LayerImplementation(this.id, this.entries, { ...this.providers, ...values })
   }
 }

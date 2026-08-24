@@ -429,10 +429,15 @@ export type LayerRequirementsOf<Value> = Value extends {
 }
   ? RequirementsFromEntries<Entries>
   : never
-export type LayerUnprovidedRequirementsOf<Value> = Omit<
-  LayerRequirementsOf<Value>,
-  keyof LayerProvidersOf<Value>
->
+export type LayerUnprovidedRequirementsOf<Value> = Value extends {
+  readonly entries: infer Entries extends LayerEntries
+  readonly providers: infer Provided extends Providers
+}
+  ? Omit<
+      EffectiveRequirementsFromEntries<Entries>,
+      keyof EffectiveLayerProviders<Entries, Provided>
+    >
+  : never
 
 export interface FlattenedLayerEntry {
   readonly id: string
