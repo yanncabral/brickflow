@@ -1,3 +1,4 @@
+import { assertValidPathSegment } from '../path-segment'
 import type { SignalCallMetadata, UnknownSignalHandlers } from './types'
 
 export type NamespacedHandlers<Path extends readonly string[], Handlers> = Path extends readonly [
@@ -18,6 +19,7 @@ export function flattenNamespacedSignalHandlers(
   const flattened: Record<string, NonNullable<UnknownSignalHandlers[string]>> = {}
 
   for (const [name, value] of Object.entries(handlers)) {
+    assertValidPathSegment(name)
     const durableName = durableSignalName(path, name)
     if (isHandler(value)) {
       flattened[durableName] = value

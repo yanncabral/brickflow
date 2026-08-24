@@ -1,5 +1,6 @@
 import { isFlowImplementation, markFlowImplementation } from '../flow/implementation'
 import type { FlowImplementation } from '../flow/types'
+import { assertValidPathSegment } from '../path-segment'
 import { executeFlow, type SuppliedDependencyNode } from '../worker/execution'
 import {
   effectiveLayerProviders,
@@ -47,8 +48,10 @@ class LayerImplementation<
   constructor(id: Id, entries: Entries, providers?: Provided) {
     super()
     if (id.length === 0) throw new Error('Layer ID must not be empty')
+    assertValidPathSegment(id)
 
     for (const [key, entry] of Object.entries(entries)) {
+      assertValidPathSegment(key)
       if (reservedNames.has(key as ReservedLayerEntryName)) {
         throw new Error(`Reserved Layer entry name: ${key}`)
       }

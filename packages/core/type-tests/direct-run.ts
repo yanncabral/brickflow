@@ -2,6 +2,7 @@ import {
   type EngineExecutionHandle,
   type EngineExecutionRequest,
   type Flow,
+  type FlowRunOptions,
   flow,
   Layer,
   type Worker
@@ -266,6 +267,45 @@ const locallyResolvedApp = new Layer('app', {
   reporting: reportingWithRepository
 })
 locallyResolvedApp.placeOrder.run(undefined)
+
+interface LayerResolvedRepositoryFlow extends Flow {
+  params: undefined
+  result: string
+  signals: { refresh: { request: undefined; response: string } }
+}
+interface LayerResolvedCheckoutFlow extends Flow {
+  params: undefined
+  result: string
+  depends: { repository: LayerResolvedRepositoryFlow }
+}
+interface LayerResolvedOrderFlow extends Flow {
+  params: undefined
+  result: string
+  depends: { checkout: LayerResolvedCheckoutFlow }
+}
+const layerResolvedRepository = flow<LayerResolvedRepositoryFlow>(() => 'repository')
+const layerResolvedCheckout = flow<LayerResolvedCheckoutFlow>(() => 'checkout')
+const layerResolvedOrder = flow<LayerResolvedOrderFlow>(() => 'order')
+const layerResolvedSignalApp = new Layer('app', {
+  order: layerResolvedOrder,
+  checkout: new Layer('checkout', {
+    checkout: layerResolvedCheckout,
+    repository: layerResolvedRepository
+  })
+})
+layerResolvedSignalApp.order.run(undefined, {
+  signals: { app: { checkout: { repository: { refresh: () => 'refreshed' } } } }
+})
+layerResolvedSignalApp.order.run(undefined, {
+  signals: {
+    app: {
+      checkout: {
+        // @ts-expect-error fully resolved transitive signal path must not duplicate checkout
+        checkout: { repository: { refresh: () => 'wrong' } }
+      }
+    }
+  }
+})
 
 const suppliedCheckoutApp = new Layer('supplied-checkout-app', {
   placeOrder: scopedPlaceOrder,
@@ -541,6 +581,116 @@ depthBoundedLayer.depthRoot.run(undefined, {
     depth1: { dependencies: {} }
   }
 })
+
+interface DepthSignalLeafFlow extends Flow {
+  params: undefined
+  result: undefined
+  signals: { refresh: { request: undefined; response: boolean } }
+}
+interface DepthSignal16Flow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { leaf: DepthSignalLeafFlow }
+}
+interface DepthSignal15Flow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { depth16: DepthSignal16Flow }
+}
+interface DepthSignal14Flow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { depth15: DepthSignal15Flow }
+}
+interface DepthSignal13Flow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { depth14: DepthSignal14Flow }
+}
+interface DepthSignal12Flow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { depth13: DepthSignal13Flow }
+}
+interface DepthSignal11Flow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { depth12: DepthSignal12Flow }
+}
+interface DepthSignal10Flow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { depth11: DepthSignal11Flow }
+}
+interface DepthSignal9Flow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { depth10: DepthSignal10Flow }
+}
+interface DepthSignal8Flow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { depth9: DepthSignal9Flow }
+}
+interface DepthSignal7Flow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { depth8: DepthSignal8Flow }
+}
+interface DepthSignal6Flow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { depth7: DepthSignal7Flow }
+}
+interface DepthSignal5Flow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { depth6: DepthSignal6Flow }
+}
+interface DepthSignal4Flow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { depth5: DepthSignal5Flow }
+}
+interface DepthSignal3Flow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { depth4: DepthSignal4Flow }
+}
+interface DepthSignal2Flow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { depth3: DepthSignal3Flow }
+}
+interface DepthSignal1Flow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { depth2: DepthSignal2Flow }
+}
+interface DepthSignalRootFlow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { depth1: DepthSignal1Flow }
+}
+
+declare const depthSignalRoot: ReturnType<typeof flow<DepthSignalRootFlow>>
+type DepthSignalRunOptions = FlowRunOptions<DepthSignalRootFlow>
+// @ts-expect-error depth exhaustion must not make required deeper signal config disappear
+const omittedDepthSignalOptions: DepthSignalRunOptions = { dependencies: {} as never }
+const emptyDepthSignalOptions: DepthSignalRunOptions = {
+  dependencies: {} as never,
+  // @ts-expect-error depth exhaustion must reject an empty signal config
+  signals: {}
+}
+const incompleteDepthSignalOptions: DepthSignalRunOptions = {
+  dependencies: {} as never,
+  // @ts-expect-error depth exhaustion must reject incomplete known signal paths
+  signals: { depth1: {} }
+}
+void depthSignalRoot
+void omittedDepthSignalOptions
+void emptyDepthSignalOptions
+void incompleteDepthSignalOptions
 
 interface BooleanSignalChildFlow extends Flow {
   params: undefined

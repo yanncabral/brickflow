@@ -15,6 +15,17 @@ import type { BoundarySignalHandlers, SignalDefinitions } from '../signal/types'
 import type { FlowRun } from '../worker/types'
 
 export type Providers = Readonly<Record<string, unknown>>
+
+type ValidPathSegment<Value extends string> = Value extends `${string}.${string}` ? never : Value
+
+type ValidatePathSegmentKeys<Entries extends LayerEntries> = {
+  readonly [Key in keyof Entries]: Key extends string
+    ? Key extends `${string}.${string}`
+      ? never
+      : Entries[Key]
+    : Entries[Key]
+}
+
 export interface AnyLayer {
   readonly id: string
   readonly entries: Readonly<Record<string, unknown>>
@@ -110,10 +121,12 @@ type FlowOfEntry<Entry> = Entry extends FlowImplementation<infer F extends Flow>
 
 type DirectFlowEntryForAlias<
   Entries extends LayerEntries,
-  Alias extends PropertyKey
+  Alias extends PropertyKey,
+  Path extends readonly PropertyKey[] = readonly []
 > = Alias extends keyof Entries
   ? Entries[Alias] extends FlowImplementation<infer _F extends Flow>
     ? {
+        readonly path: readonly [...Path, Alias]
         readonly implementation: Entries[Alias]
         readonly scope: Entries
       }
@@ -160,6 +173,21 @@ type ResolvedFlowEntry<
   Direct = DirectFlowEntryForAlias<ScopeEntries, Alias>
 > = [Direct] extends [never] ? UniqueGlobalFlowEntryForAlias<RootEntries, Alias> : Direct
 
+type ResolvedFlowEntryFromRoot<RootEntries extends LayerEntries, Alias extends PropertyKey> =
+  DirectFlowEntryForAlias<RootEntries, Alias> extends infer Direct
+    ? [Direct] extends [never]
+      ? UniqueGlobalFlowEntryForAlias<RootEntries, Alias>
+      : Direct
+    : never
+
+type ResolvedFlowEntryForSignals<
+  RootEntries extends LayerEntries,
+  ScopeEntries extends LayerEntries,
+  Alias extends PropertyKey
+> = ScopeEntries extends RootEntries
+  ? ResolvedFlowEntry<RootEntries, ScopeEntries, Alias>
+  : ResolvedFlowEntryFromRoot<RootEntries, Alias>
+
 type OwnSignalHandlers<F extends Flow> =
   SignalsOf<F> extends SignalDefinitions
     ? keyof SignalsOf<F> extends never
@@ -182,26 +210,21 @@ type NamespacedSignalHandlers<
 type ResolvedSignalHandlers<
   RootEntries extends LayerEntries,
   Alias extends PropertyKey,
-  Resolved
+  Resolved,
+  Depth extends readonly unknown[] = []
 > = Resolved extends {
   readonly path: infer Path extends readonly PropertyKey[]
   readonly implementation: FlowImplementation<infer ResolvedFlow extends Flow>
   readonly scope: infer ResolvedScope extends LayerEntries
 }
-  ? NamespacedSignalHandlers<
-      Path,
-      OwnSignalHandlers<ResolvedFlow> &
-        OwnSelectedSignalHandlers<RootEntries, ResolvedScope, ResolvedFlow>
-    >
+  ? NamespacedSignalHandlers<Path, OwnSignalHandlers<ResolvedFlow>> &
+      OwnSelectedSignalHandlers<RootEntries, ResolvedScope, ResolvedFlow, Depth>
   : Resolved extends {
         readonly implementation: FlowImplementation<infer ResolvedFlow extends Flow>
         readonly scope: infer ResolvedScope extends LayerEntries
       }
-    ? NamespacedSignalHandlers<
-        readonly [Alias],
-        OwnSignalHandlers<ResolvedFlow> &
-          OwnSelectedSignalHandlers<RootEntries, ResolvedScope, ResolvedFlow>
-      >
+    ? NamespacedSignalHandlers<readonly [Alias], OwnSignalHandlers<ResolvedFlow>> &
+        OwnSelectedSignalHandlers<RootEntries, ResolvedScope, ResolvedFlow, Depth>
     : Record<never, never>
 
 type OwnSelectedSignalHandlers<
@@ -210,15 +233,17 @@ type OwnSelectedSignalHandlers<
   F extends Flow,
   Depth extends readonly unknown[] = []
 > = Depth['length'] extends 16
-  ? Record<never, never>
+  ? keyof DependenciesOf<F> extends never
+    ? Record<never, never>
+    : never
   : UnionToIntersection<
       {
-        readonly [Alias in keyof DependenciesOf<F>]: ResolvedFlowEntry<
+        readonly [Alias in keyof DependenciesOf<F>]: ResolvedFlowEntryForSignals<
           RootEntries,
           ScopeEntries,
           Alias
         > extends infer Resolved
-          ? ResolvedSignalHandlers<RootEntries, Alias, Resolved>
+          ? ResolvedSignalHandlers<RootEntries, Alias, Resolved, [...Depth, unknown]>
           : Record<never, never>
       }[keyof DependenciesOf<F>]
     >
@@ -574,9 +599,10 @@ export type Layer<
 
 export interface LayerConstructor {
   new <const Id extends string, const Entries extends LayerEntries>(
-    id: Id,
+    id: Id & ValidPathSegment<Id>,
     entries: Entries &
       ValidateDependencyAliases<Entries> &
+      ValidatePathSegmentKeys<Entries> &
       Record<Extract<keyof Entries, ReservedLayerEntryName>, never>
   ): Layer<Id, Entries>
 }

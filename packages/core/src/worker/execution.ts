@@ -13,6 +13,7 @@ import type {
   RequirementsOf,
   ResultOf
 } from '../flow/types'
+import { assertValidPathSegment } from '../path-segment'
 import { createSignalFunctions } from '../signal/functions'
 import { createSignalHandlerChain, resolveSignal } from '../signal/handler'
 import { flattenNamespacedSignalHandlers } from '../signal/namespace'
@@ -64,14 +65,15 @@ async function executeResolvedFlow<F extends Flow>(
   const dependencies = new Proxy(Object.create(null) as DependencyFunctions<F>, {
     get(_target, property) {
       if (typeof property !== 'string') return undefined
+      assertValidPathSegment(property)
       const dependencyEntry = options.resolveDependency(entry, property)
       return async (
         dependencyParams: unknown,
         callOptions?: { readonly signals?: Readonly<Record<string, unknown>> }
       ) => {
-        const dependencyId = dependencyEntry.suppliedPath ??
+        const signalPath = dependencyEntry.signalPath ??
+          dependencyEntry.suppliedPath ??
           dependencyEntry.id?.split('.') ?? [dependencyEntry.key]
-        const signalPath = dependencyEntry.signalPath ?? dependencyId
         const layerPath = signalPath.slice(0, -1)
         const flowPath = [signalPath.at(-1) ?? dependencyEntry.key]
         const parentSignalHandlers = context.signalHandlers
@@ -79,7 +81,7 @@ async function executeResolvedFlow<F extends Flow>(
           ? createSignalHandlerChain(
               Object.fromEntries(
                 Object.entries(callOptions.signals).map(([name, handler]) => [
-                  [...dependencyId, name].join('.'),
+                  [...signalPath, name].join('.'),
                   handler
                 ])
               ) as UnknownSignalHandlers,

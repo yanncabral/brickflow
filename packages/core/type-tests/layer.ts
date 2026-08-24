@@ -89,6 +89,11 @@ new Layer('invalid', { invalid: {} })
 // @ts-expect-error reserved names cannot be used as entries
 new Layer('invalid', { provide: getUser })
 
+// @ts-expect-error dot is reserved in Layer IDs
+new Layer('invalid.id', { getUser })
+// @ts-expect-error dot is reserved in Layer entry keys
+new Layer('valid', { 'get.user': getUser })
+
 type Repository = { get(id: string): string }
 
 interface RepositoryFlow extends Flow {

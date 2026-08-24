@@ -129,6 +129,15 @@ describe('Layer', () => {
     )
   })
 
+  test('rejects dotted Layer IDs and entry keys because dot is reserved', () => {
+    expect(() => new Layer('invalid.id' as never, { getUser } as never)).toThrow(
+      /invalid path segment.*invalid\.id.*\.\W.*reserved delimiter/i
+    )
+    expect(() => new Layer('users', { 'get.user': getUser } as never)).toThrow(
+      /invalid path segment.*get\.user.*\.\W.*reserved delimiter/i
+    )
+  })
+
   test('detects duplicate durable IDs from repeated nested layer IDs', () => {
     const first = new Layer('users', { getUser })
     const second = new Layer('users', { getUser })

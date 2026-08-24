@@ -210,6 +210,42 @@ describe('direct Flow execution', () => {
     ).resolves.toBe(false)
   })
 
+  test('rejects dotted direct dependency aliases before path dispatch can collide', async () => {
+    interface LeafFlow extends Flow {
+      params: undefined
+      result: string
+    }
+    interface NestedFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { child: LeafFlow }
+    }
+    interface RootFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { 'parent.child': LeafFlow; parent: NestedFlow }
+    }
+
+    const leaf = flow<LeafFlow>(() => 'leaf')
+    const nested = flow<NestedFlow>(async (_params, _requirements, dependencies) =>
+      dependencies.child(undefined)
+    )
+    const root = flow<RootFlow>(async (_params, _requirements, dependencies) =>
+      dependencies['parent.child'](undefined)
+    )
+
+    const run = root.run(undefined, {
+      dependencies: {
+        'parent.child': { flow: leaf },
+        parent: { flow: nested, dependencies: { child: { flow: leaf } } }
+      }
+    })
+
+    await expect(Promise.resolve(run)).rejects.toThrow(
+      /invalid path segment.*parent\.child.*\.\W.*reserved delimiter/i
+    )
+  })
+
   test('preserves typed recovery and rejects unexpected defects', async () => {
     const recovered = parent
       .run(
@@ -711,6 +747,130 @@ describe('Layer-bound Flow execution', () => {
         })
       )
     ).resolves.toBe('selected')
+  })
+
+  test('uses exact absolute paths for fully Layer-resolved transitive signals', async () => {
+    interface RepositoryFlow extends Flow {
+      params: undefined
+      result: string
+      signals: { refresh: { request: undefined; response: string } }
+    }
+    interface CheckoutFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { repository: RepositoryFlow }
+    }
+    interface PlaceOrderFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { checkout: CheckoutFlow }
+    }
+
+    const repository = flow<RepositoryFlow>(
+      async (_params, _requirements, _dependencies, { signals }) => signals.refresh(undefined)
+    )
+    const checkout = flow<CheckoutFlow>(async (_params, _requirements, dependencies) =>
+      dependencies.repository(undefined)
+    )
+    const placeOrder = flow<PlaceOrderFlow>(async (_params, _requirements, dependencies) =>
+      dependencies.checkout(undefined)
+    )
+    const app = new Layer('app', {
+      placeOrder,
+      checkout: new Layer('checkout', { checkout, repository })
+    })
+
+    await expect(
+      Promise.resolve(
+        app.placeOrder.run(undefined, {
+          signals: { app: { checkout: { repository: { refresh: () => 'refreshed' } } } }
+        })
+      )
+    ).resolves.toBe('refreshed')
+  })
+
+  test('local signal overrides follow Layer-resolved callee paths', async () => {
+    interface RepositoryFlow extends Flow {
+      params: undefined
+      result: string
+      signals: { refresh: { request: undefined; response: string } }
+    }
+    interface CheckoutFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { repository: RepositoryFlow }
+    }
+    interface PlaceOrderFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { checkout: CheckoutFlow }
+    }
+
+    const repository = flow<RepositoryFlow>(
+      async (_params, _requirements, _dependencies, { signals }) => signals.refresh(undefined)
+    )
+    const suppliedCheckout = flow<CheckoutFlow>(async (_params, _requirements, dependencies) =>
+      dependencies.repository(undefined, { signals: { refresh: () => 'local' } })
+    )
+    const placeOrder = flow<PlaceOrderFlow>(async (_params, _requirements, dependencies) =>
+      dependencies.checkout(undefined)
+    )
+    const app = new Layer('app', {
+      placeOrder,
+      checkout: new Layer('checkout', { repository })
+    })
+
+    await expect(
+      Promise.resolve(
+        app.placeOrder.run(undefined, {
+          dependencies: { checkout: { flow: suppliedCheckout } },
+          signals: { app: { checkout: { repository: { refresh: () => 'boundary' } } } }
+        })
+      )
+    ).resolves.toBe('local')
+  })
+
+  test('rejects dotted bound dependency aliases before nested paths can collide', async () => {
+    interface LeafFlow extends Flow {
+      params: undefined
+      result: string
+    }
+    interface RootFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { 'parent.child': LeafFlow }
+    }
+
+    const leaf = flow<LeafFlow>(() => 'leaf')
+    const root = flow<RootFlow>(async (_params, _requirements, dependencies) =>
+      dependencies['parent.child'](undefined)
+    )
+    const app = new Layer('app', { root })
+    const run = app.root.run(undefined, {
+      dependencies: { 'parent.child': { flow: leaf } }
+    })
+
+    await expect(Promise.resolve(run)).rejects.toThrow(
+      /invalid path segment.*parent\.child.*\.\W.*reserved delimiter/i
+    )
+  })
+
+  test('rejects dotted signal names before namespaced dispatch can collide', async () => {
+    interface SignalledFlow extends Flow {
+      params: undefined
+      result: string
+      signals: { 'status.refresh': { request: undefined; response: string } }
+    }
+
+    const signalled = flow<SignalledFlow>(
+      async (_params, _requirements, _dependencies, { signals }) =>
+        signals['status.refresh'](undefined)
+    )
+    expect(() =>
+      signalled.run(undefined, {
+        signals: { 'status.refresh': () => 'invalid' }
+      })
+    ).toThrow(/invalid path segment.*status\.refresh.*\.\W.*reserved delimiter/i)
   })
 
   test('accepts unresolved dependency aliases and gives scoped Layer entries precedence', async () => {

@@ -149,6 +149,12 @@ export type DependencySignalHandlers<F extends Flow, Depth extends readonly unkn
     : Alias]: FlowSignalHandlers<DependencyFlow<DependenciesOf<F>[Alias]>, [...Depth, unknown]>
 }
 
+type DepthFallbackSignalHandlers<F extends Flow> = keyof DependenciesOf<F> extends never
+  ? Empty
+  : {
+      readonly [Alias in keyof DependenciesOf<F>]: Readonly<Record<string, unknown>>
+    }
+
 export type FlowSignalHandlers<
   F extends Flow,
   Depth extends readonly unknown[] = []
@@ -157,7 +163,7 @@ export type FlowSignalHandlers<
     ? Empty
     : BoundarySignalHandlers<SignalsOf<F>>
   : Empty) &
-  (Depth['length'] extends 16 ? Empty : DependencySignalHandlers<F, Depth>)
+  (Depth['length'] extends 16 ? DepthFallbackSignalHandlers<F> : DependencySignalHandlers<F, Depth>)
 
 type DependencyCallOptions<F extends Flow> =
   SignalsOf<F> extends SignalDefinitions
