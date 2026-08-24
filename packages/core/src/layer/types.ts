@@ -6,7 +6,6 @@ import type {
   EffectiveRequirementsOf,
   FlowImplementation,
   FlowRunOptions,
-  FlowSignalHandlers,
   ParamsOf,
   RequirementsOf,
   ResultOf,
