@@ -48,6 +48,36 @@ withDatabase.providers.database satisfies Database
 complete.providers.logger satisfies Logger
 overridden.providers.database satisfies Database
 
+const nestedComplete = users.provide({ database, logger })
+const applicationWithNestedProviders = new Layer('application-with-nested-providers', {
+  users: nestedComplete,
+  audit
+})
+
+// @ts-expect-error nested-only providers are not exposed on the outer Layer
+applicationWithNestedProviders.providers.database
+// Nested providers still satisfy bound Flow requirements across the complete Layer tree.
+applicationWithNestedProviders.audit.run(undefined)
+
+declare const applicationWithNestedProviderMap: LayerProvidersOf<
+  typeof applicationWithNestedProviders
+>
+// @ts-expect-error LayerProvidersOf only includes providers directly attached to the Layer
+applicationWithNestedProviderMap.logger
+
+type Equal<Left, Right> =
+  (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
+    ? true
+    : false
+type Expect<Value extends true> = Value
+
+type _NestedDatabaseIsProvided = Expect<
+  Equal<keyof LayerUnprovidedRequirementsOf<typeof applicationWithNestedProviders>, never>
+>
+type _NestedProviderIsNotDirect = Expect<
+  Equal<keyof LayerProvidersOf<typeof applicationWithNestedProviders>, never>
+>
+
 // @ts-expect-error duplicate inline provider key is rejected
 withDatabase.provide({ database })
 // @ts-expect-error only already-provided keys can be overridden
@@ -58,6 +88,132 @@ application.provide({ database: { find: (_id: number) => 'invalid' } })
 new Layer('invalid', { invalid: {} })
 // @ts-expect-error reserved names cannot be used as entries
 new Layer('invalid', { provide: getUser })
+
+declare const symbolLayerEntry: unique symbol
+// @ts-expect-error Layer entry keys must be string keys
+new Layer('invalid', { [symbolLayerEntry]: getUser })
+// @ts-expect-error numeric Layer entry keys must be rejected instead of stringified
+new Layer('invalid', { 0: getUser })
+
+// @ts-expect-error Layer IDs must not be empty
+new Layer('', { getUser })
+// @ts-expect-error Layer entry keys must not be empty
+new Layer('valid', { '': getUser })
+// @ts-expect-error dot is reserved in Layer IDs
+new Layer('invalid.id', { getUser })
+// @ts-expect-error dot is reserved in Layer entry keys
+new Layer('valid', { 'get.user': getUser })
+
+type Repository = { get(id: string): string }
+
+interface RepositoryFlow extends Flow {
+  params: undefined
+  result: undefined
+  requires: { repository: Repository }
+}
+
+interface TransitiveRequirementFlow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { repositoryWorker: RepositoryFlow }
+}
+
+const repository: Repository = { get: (id) => id }
+const repositoryWorker = flow<RepositoryFlow>(() => undefined)
+const transitiveRequirement = flow<TransitiveRequirementFlow>(
+  async (_params, _requirements, { repositoryWorker: runRepositoryWorker }) =>
+    runRepositoryWorker(undefined)
+)
+
+const directTransitiveLayer = new Layer('direct-transitive', { transitiveRequirement })
+const oneLevelTransitiveLayer = new Layer('one-level-transitive', {
+  nested: directTransitiveLayer
+})
+const twoLevelTransitiveLayer = new Layer('two-level-transitive', {
+  nested: oneLevelTransitiveLayer
+})
+
+type _TransitiveRepositoryRemainsUnprovided = Expect<
+  Equal<
+    LayerUnprovidedRequirementsOf<typeof twoLevelTransitiveLayer>,
+    Readonly<{ repository: Repository }>
+  >
+>
+
+// Direct Flow effective requirements validate transitive provider values.
+// @ts-expect-error transitive provider must satisfy Repository
+directTransitiveLayer.provide({ repository: 1 })
+// Nested Layers preserve effective requirement validation at every level.
+// @ts-expect-error one nested Layer level must preserve the transitive requirement type
+oneLevelTransitiveLayer.provide({ repository: 1 })
+// @ts-expect-error two nested Layer levels must preserve the transitive requirement type
+twoLevelTransitiveLayer.provide({ repository: 1 })
+
+const directTransitiveProvided = directTransitiveLayer.provide({ repository })
+const oneLevelTransitiveProvided = oneLevelTransitiveLayer.provide({ repository })
+const twoLevelTransitiveProvided = twoLevelTransitiveLayer.provide({ repository })
+
+// Valid providers remove the transitive requirement from bound run options.
+directTransitiveProvided.transitiveRequirement.run(undefined, {
+  dependencies: { repositoryWorker: { flow: repositoryWorker } }
+})
+oneLevelTransitiveProvided.nested.transitiveRequirement.run(undefined, {
+  dependencies: { repositoryWorker: { flow: repositoryWorker } }
+})
+twoLevelTransitiveProvided.nested.nested.transitiveRequirement.run(undefined, {
+  dependencies: { repositoryWorker: { flow: repositoryWorker } }
+})
+
+const oneLevelTransitiveOverridden = oneLevelTransitiveProvided.override({ repository })
+oneLevelTransitiveOverridden.nested.transitiveRequirement.run(undefined, {
+  dependencies: { repositoryWorker: { flow: repositoryWorker } }
+})
+
+// @ts-expect-error overrides validate nested transitive requirement values
+oneLevelTransitiveProvided.override({ repository: 1 })
+
+const postgresRepository: Repository = { get: (id) => `postgres-${id}` }
+const memoryRepository: Repository = { get: (id) => `memory-${id}` }
+const nestedRepositoryProvided = new Layer('nested-repository-provided', {
+  repositoryWorker
+}).provide({
+  repository: postgresRepository
+})
+const outerRepositoryProvided = new Layer('outer-repository-provided', {
+  nested: nestedRepositoryProvided
+})
+
+// @ts-expect-error nested effective provider keys cannot be provided again with a correct value
+outerRepositoryProvided.provide({ repository: memoryRepository })
+// @ts-expect-error nested effective provider keys cannot be provided again with an incorrect value
+outerRepositoryProvided.provide({ repository: 1 })
+// @ts-expect-error exact empty provider maps reject arbitrary extra keys
+outerRepositoryProvided.provide({ arbitrary: true })
+
+const outerRepositoryOverridden = outerRepositoryProvided.override({
+  repository: memoryRepository
+})
+outerRepositoryOverridden.providers.repository satisfies Repository
+outerRepositoryOverridden.nested.repositoryWorker.run(undefined)
+
+// @ts-expect-error nested effective overrides validate the effective requirement value
+outerRepositoryProvided.override({ repository: 1 })
+// @ts-expect-error truly absent provider keys cannot be overridden
+outerRepositoryProvided.override({ arbitrary: true })
+
+interface ConflictingTransitiveRepositoryFlow extends Flow {
+  params: undefined
+  result: undefined
+  requires: { repository: number }
+}
+
+const conflictingTransitiveRepository = flow<ConflictingTransitiveRepositoryFlow>(() => undefined)
+const nestedEffectiveConflictLayer = new Layer('nested-effective-conflict', {
+  nested: oneLevelTransitiveLayer,
+  conflictingTransitiveRepository
+})
+// @ts-expect-error nested effective requirement conflicts retain RequirementConflict validation
+nestedEffectiveConflictLayer.provide({ repository })
 
 type PrimaryService = { kind: 'primary'; run(): string }
 type SecondaryService = { kind: 'secondary'; run(): string }

@@ -1,47 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  type Engine,
-  type EngineExecutionHandle,
-  type EngineExecutionRequest,
-  ExecutionContext,
-  isEngine
-} from '../src/index'
+import { ExecutionContext } from '../src/index'
 import { createSignalFunctions } from '../src/signal/functions'
 import { createSignalHandlerChain } from '../src/signal/handler'
 
-class FakeEngine implements Engine {
-  start<Result, Error>(
-    request: EngineExecutionRequest<Result, Error>
-  ): EngineExecutionHandle<Result, Error> {
-    return {
-      id: request.id,
-      result: request.execute(),
-      status: async () => 'running',
-      cancel: async () => {},
-      signal: async (signal) => request.signal(signal)
-    }
-  }
-}
-
-describe('Engine contracts', () => {
-  test('recognizes structural engines and delegates neutral requests', async () => {
-    const engine = new FakeEngine()
-    const request: EngineExecutionRequest<string, never> = {
-      id: 'run-1',
-      flowId: 'files.editFile',
-      params: 'value',
-      context: new ExecutionContext({ callId: 'call-1' }),
-      execute: async () => ({ ok: true, value: 'value' }),
-      signal: async (call) => call.request
-    }
-    const handle = engine.start(request)
-
-    expect(isEngine(engine)).toBe(true)
-    await expect(handle.result).resolves.toEqual({ ok: true, value: 'value' })
-    await expect(handle.status()).resolves.toBe('running')
-    await expect(handle.signal({ name: 'approve', request: true })).resolves.toBe(true)
-  })
-
+describe('ExecutionContext', () => {
   test('dispatches local signals with the current durable namespace and child namespaces', async () => {
     const names: string[] = []
     const context = new ExecutionContext({
@@ -65,6 +27,30 @@ describe('Engine contracts', () => {
     await expect(signals.approve({ id: 'root' })).resolves.toBe('root')
     await expect(childSignals.approve({ id: 'child' })).resolves.toBe('child')
     expect(names).toEqual(['files.editFile.approve', 'files.editFile.validate.approve'])
+  })
+
+  test('rejects invalid constructor path segments', () => {
+    for (const invalid of ['', 'nested.path']) {
+      expect(
+        () => new ExecutionContext({ layerPath: ['files', invalid], callId: 'call-layer' })
+      ).toThrow(/invalid path segment/i)
+      expect(
+        () => new ExecutionContext({ flowPath: ['editFile', invalid], callId: 'call-flow' })
+      ).toThrow(/invalid path segment/i)
+    }
+  })
+
+  test('rejects invalid child path segments', () => {
+    const context = new ExecutionContext({
+      layerPath: ['files'],
+      flowPath: ['editFile'],
+      callId: 'call-1'
+    })
+
+    for (const invalid of ['', 'nested.path']) {
+      expect(() => context.childLayer(invalid)).toThrow(/invalid path segment/i)
+      expect(() => context.childFlow(invalid, 'call-2')).toThrow(/invalid path segment/i)
+    }
   })
 
   test('creates immutable child contexts with namespaced paths and inherited state', async () => {

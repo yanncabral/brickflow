@@ -1,5 +1,6 @@
 import type { ExecutionContext } from '../engine/execution-context'
 import type { EngineSignalRequest } from '../engine/types'
+import { assertValidPathSegment } from '../path-segment'
 import { resolveSignal } from './handler'
 import type { SignalDefinitions, SignalFunctions } from './types'
 
@@ -15,6 +16,7 @@ export function createSignalFunctions<Definitions extends SignalDefinitions>(
   return new Proxy(target, {
     get(_target, property) {
       if (typeof property !== 'string') return undefined
+      assertValidPathSegment(property)
       let signal = functions.get(property)
       if (!signal) {
         signal = async (request: unknown) => {

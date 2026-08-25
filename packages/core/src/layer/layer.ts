@@ -1,13 +1,32 @@
-import { isFlowImplementation } from '../flow/implementation'
-import { flattenLayer, isLayer, LayerRuntime } from './composition'
-import { addProviders, overrideProviders } from './provide'
+import { isFlowImplementation, markFlowImplementation } from '../flow/implementation'
+import type { FlowImplementation } from '../flow/types'
+import { assertValidPathSegment } from '../path-segment'
+import { executeFlow, type SuppliedDependencyNode } from '../worker/execution'
+import {
+  effectiveLayerProviders,
+  findLayerDependency,
+  flattenLayer,
+  isLayer,
+  LayerRuntime
+} from './composition'
+import { addProviders } from './provide'
 import type {
   AnyLayer,
+  FlattenedLayerEntry,
   LayerConstructor,
   LayerEntries,
   Providers,
   ReservedLayerEntryName
 } from './types'
+
+function flowIdentity(value: FlowImplementation): FlowImplementation {
+  return value
+}
+
+function hasProviderKey(layer: AnyLayer, key: string): boolean {
+  if (Object.hasOwn(layer.providers, key)) return true
+  return Object.values(layer.entries).some((entry) => isLayer(entry) && hasProviderKey(entry, key))
+}
 
 const reservedNames: ReadonlySet<ReservedLayerEntryName> = new Set([
   'id',
@@ -28,9 +47,10 @@ class LayerImplementation<
 
   constructor(id: Id, entries: Entries, providers?: Provided) {
     super()
-    if (id.length === 0) throw new Error('Layer ID must not be empty')
+    assertValidPathSegment(id)
 
     for (const [key, entry] of Object.entries(entries)) {
+      assertValidPathSegment(key)
       if (reservedNames.has(key as ReservedLayerEntryName)) {
         throw new Error(`Reserved Layer entry name: ${key}`)
       }
@@ -47,7 +67,7 @@ class LayerImplementation<
       Object.defineProperty(this, key, {
         configurable: false,
         enumerable: true,
-        value: entry,
+        value: this.bindEntry(entry, key),
         writable: false
       })
     }
@@ -56,12 +76,148 @@ class LayerImplementation<
     Object.freeze(this)
   }
 
+  private bindEntry(entry: unknown, key: string): unknown {
+    if (isFlowImplementation(entry)) return this.bindFlow(entry, key, `${this.id}.${key}`)
+    if (isLayer(entry)) return this.bindNestedLayer(entry, `${this.id}.${entry.id}`)
+    return entry
+  }
+
+  private bindFlow(entry: ReturnType<typeof flowIdentity>, key: string, targetId: string): unknown {
+    const layer = this
+    const bound = {
+      handler: entry.handler,
+      run(
+        params: unknown,
+        options?: {
+          readonly requirements?: Readonly<Record<string, unknown>>
+          readonly dependencies?: Readonly<Record<string, SuppliedDependencyNode>>
+          readonly signals?: Readonly<Record<string, unknown>>
+          readonly worker?: unknown
+          readonly id?: string
+          readonly metadata?: Readonly<Record<string, unknown>>
+        }
+      ) {
+        const entries = flattenLayer(layer)
+        const root = entries.find((candidate) => candidate.id === targetId) as
+          | FlattenedLayerEntry
+          | undefined
+        if (!root) throw new Error(`Bound Flow entry not found: ${key}`)
+        const suppliedDependencies = options?.dependencies ?? {}
+        const executionRoot = Object.freeze({
+          ...root,
+          ...(options?.dependencies ? { suppliedDependencies } : {})
+        })
+        return executeFlow({
+          root: executionRoot,
+          entries,
+          params,
+          providers: Object.freeze({
+            ...effectiveLayerProviders(layer),
+            ...((options?.requirements as Readonly<Record<string, unknown>> | undefined) ?? {})
+          }),
+          resolveDependency: (caller, alias) => {
+            const callerLayerPath = (caller as FlattenedLayerEntry).layerPath ?? root.layerPath
+            const suppliedNode = caller.suppliedDependencies?.[alias]
+            const supplied = suppliedNode?.flow ? suppliedNode : undefined
+            const suppliedBranchPath = Object.freeze([...(caller.suppliedPath ?? []), alias])
+            const scopedSupplied = supplied
+              ? Object.freeze({
+                  id: [...(caller.id?.split('.') ?? []), alias].join('.'),
+                  key: alias,
+                  implementation: supplied.flow,
+                  layerPath: Object.freeze([...callerLayerPath]),
+                  suppliedPath: suppliedBranchPath,
+                  ...(supplied.dependencies ? { suppliedDependencies: supplied.dependencies } : {})
+                })
+              : undefined
+            if (callerLayerPath.length > 0) {
+              const layerEntry = findLayerDependency(
+                layer,
+                caller as FlattenedLayerEntry,
+                alias,
+                scopedSupplied as FlattenedLayerEntry | undefined
+              )
+              if (layerEntry) {
+                const resolvedDependencies =
+                  suppliedNode?.dependencies ?? caller.suppliedDependencies?.[alias]?.dependencies
+                return resolvedDependencies
+                  ? Object.freeze({
+                      ...layerEntry,
+                      suppliedDependencies: resolvedDependencies,
+                      signalPath: Object.freeze(layerEntry.id.split('.')),
+                      ...(caller.suppliedPath || suppliedNode
+                        ? { suppliedPath: suppliedBranchPath }
+                        : {}),
+                      ...(scopedSupplied ? { ownSignalPath: scopedSupplied.suppliedPath } : {})
+                    })
+                  : scopedSupplied
+                    ? Object.freeze({
+                        ...layerEntry,
+                        suppliedPath: scopedSupplied.suppliedPath,
+                        signalPath: Object.freeze(layerEntry.id.split('.')),
+                        ownSignalPath: scopedSupplied.suppliedPath
+                      })
+                    : caller.suppliedPath
+                      ? Object.freeze({
+                          ...layerEntry,
+                          suppliedPath: caller.suppliedPath,
+                          signalPath: Object.freeze(layerEntry.id.split('.'))
+                        })
+                      : layerEntry
+              }
+            }
+            if (scopedSupplied) return scopedSupplied as unknown as FlattenedLayerEntry
+            throw new Error(`Missing dependency Flow entry "${alias}" in the configured Layer`)
+          },
+          ...(options?.signals
+            ? { signals: options.signals as Readonly<Record<string, unknown>> }
+            : {}),
+          ...(options?.worker ? { worker: options.worker as never } : {}),
+          ...(typeof options?.id === 'string' ? { id: options.id } : {}),
+          ...(options?.metadata
+            ? { metadata: options.metadata as Readonly<Record<string, unknown>> }
+            : {})
+        })
+      }
+    }
+    markFlowImplementation(bound)
+    return Object.freeze(bound)
+  }
+
+  private bindNestedLayer(nested: AnyLayer, pathPrefix: string): AnyLayer {
+    const view = Object.create(Object.getPrototypeOf(nested)) as Record<string, unknown>
+    Object.defineProperties(view, {
+      id: { enumerable: true, value: nested.id },
+      entries: { enumerable: false, value: nested.entries },
+      providers: { enumerable: false, value: nested.providers },
+      provide: { value: nested.provide?.bind(nested) },
+      override: { value: nested.override?.bind(nested) }
+    })
+    for (const [key, entry] of Object.entries(nested.entries)) {
+      Object.defineProperty(view, key, {
+        enumerable: true,
+        value: isFlowImplementation(entry)
+          ? this.bindFlow(entry, key, `${pathPrefix}.${key}`)
+          : isLayer(entry)
+            ? this.bindNestedLayer(entry, `${pathPrefix}.${entry.id}`)
+            : entry
+      })
+    }
+    return Object.freeze(view) as unknown as AnyLayer
+  }
+
   provide(values: Readonly<Record<string, unknown>>): AnyLayer {
-    return new LayerImplementation(this.id, this.entries, addProviders(this.providers, values))
+    addProviders(effectiveLayerProviders(this), values)
+    return new LayerImplementation(this.id, this.entries, { ...this.providers, ...values })
   }
 
   override(values: Readonly<Record<string, unknown>>): AnyLayer {
-    return new LayerImplementation(this.id, this.entries, overrideProviders(this.providers, values))
+    for (const key of Object.keys(values)) {
+      if (!hasProviderKey(this, key)) {
+        throw new Error(`Cannot override absent provider key: ${key}`)
+      }
+    }
+    return new LayerImplementation(this.id, this.entries, { ...this.providers, ...values })
   }
 }
 

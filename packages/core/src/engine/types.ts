@@ -13,7 +13,7 @@ export type EngineExecutionResult<Result, Error> =
 
 export interface EngineExecutionRequest<_Result = unknown, _Error = unknown> {
   readonly id: string
-  readonly flowId: string
+  readonly flowId?: string
   readonly params: unknown
   readonly metadata?: Readonly<Record<string, unknown>>
   readonly context: ExecutionContext

@@ -1,6 +1,4 @@
 export { P } from 'ts-pattern'
-export type { Engine } from './engine/engine'
-export { isEngine } from './engine/engine'
 export type { ExecutionContextOptions } from './engine/execution-context'
 export { ExecutionContext } from './engine/execution-context'
 export type {
@@ -15,11 +13,17 @@ export { flow } from './flow/contract'
 export type {
   DependenciesOf,
   DependencyFunctions,
+  EffectiveDependenciesOf,
+  EffectiveErrorsOf,
+  EffectiveRequirementsOf,
+  EffectiveSignalsOf,
   ErrorsOf,
   FlowExecutionResult,
   FlowHandler,
   FlowImplementation,
   FlowOf,
+  FlowRunOptionArgs,
+  FlowRunOptions,
   FlowTools,
   ParamsOf,
   RequirementsOf,
@@ -62,16 +66,18 @@ export type {
   SignalRequest,
   SignalResponse
 } from './signal/types'
+export type { Worker } from './worker/contract'
+export {
+  DuplicateLocalRunIdError,
+  LocalRunCancelledError,
+  LocalWorker,
+  localWorker
+} from './worker/local-worker'
 export { UnhandledFlowFailureError } from './worker/run'
 export type {
   CompleteFlowRun,
   FlowRun,
   FlowRunControls,
   IncompleteFlowRun,
-  RunMetadata,
-  WorkerConstructor,
-  WorkerOptions,
-  WorkerRunOptions,
-  WorkerState
+  RunMetadata
 } from './worker/types'
-export { Worker } from './worker/worker'

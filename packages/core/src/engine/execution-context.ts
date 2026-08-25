@@ -1,3 +1,4 @@
+import { assertValidPathSegment } from '../path-segment'
 import { signalCallMetadata } from '../signal/namespace'
 import type { SignalCallMetadata, SignalHandlerChain } from '../signal/types'
 
@@ -18,8 +19,12 @@ export class ExecutionContext {
   readonly #signalOccurrences = new Map<string, number>()
 
   constructor(options: ExecutionContextOptions) {
-    this.layerPath = Object.freeze([...(options.layerPath ?? [])])
-    this.flowPath = Object.freeze([...(options.flowPath ?? [])])
+    const layerPath = [...(options.layerPath ?? [])]
+    const flowPath = [...(options.flowPath ?? [])]
+    for (const segment of layerPath) assertValidPathSegment(segment)
+    for (const segment of flowPath) assertValidPathSegment(segment)
+    this.layerPath = Object.freeze(layerPath)
+    this.flowPath = Object.freeze(flowPath)
     this.callId = options.callId
     this.providers = options.providers ?? Object.freeze({})
     this.signalHandlers = options.signalHandlers
@@ -27,6 +32,7 @@ export class ExecutionContext {
   }
 
   childLayer(segment: string): ExecutionContext {
+    assertValidPathSegment(segment)
     return new ExecutionContext({
       layerPath: [...this.layerPath, segment],
       flowPath: this.flowPath,
@@ -37,6 +43,7 @@ export class ExecutionContext {
   }
 
   childFlow(segment: string, callId: string): ExecutionContext {
+    assertValidPathSegment(segment)
     return new ExecutionContext({
       layerPath: this.layerPath,
       flowPath: [...this.flowPath, segment],

@@ -2,21 +2,26 @@ You are an experienced, pragmatic software engineering AI agent. Do not over-eng
 
 # Project Overview
 
-Flow is an experimental TypeScript library for typed domain failures, structural dependency injection, composable Layers, Signals, and engine-neutral local or durable execution. The first durable adapter targets OpenWorkflow, while the core API must remain independent enough for future Temporal or Inngest adapters.
+Flow is an experimental TypeScript library for typed domain failures, structural dependency injection, composable Layers, Signals, and engine-neutral execution. Core currently implements local execution through the Worker contract. Durable adapters are planned, with OpenWorkflow targeted first, while core must remain independent enough for future Temporal or Inngest adapters.
 
 Technology: TypeScript, Bun workspaces, Bun test, Biome, Husky, and ts-pattern. The repository is ESM-only.
 
+# Required Context
+
+Read `docs/architecture/agent-context.md` before changing public API, graph resolution, Layers, providers, Signals, Workers, failures, or durable identity. It defines current behavior. `docs/superpowers/specs/` records design history.
+
 # Reference
 
-- `packages/core/`: Flow, Layer, Worker, Signal, error, and engine interfaces. It must not import a concrete engine.
-- `packages/engine-local/`: in-process execution adapter.
-- `packages/engine-openworkflow/`: OpenWorkflow adapter and serialization boundaries.
-- `packages/testing/`: deterministic helpers and type-test fixtures.
-- `examples/`: executable consumers; do not place library implementation here.
-- `docs/superpowers/specs/`: versioned design variants. Do not silently rewrite an older variant when exploring a new design.
+- `packages/core/`: Flow, Layer, Worker contract, default local Worker, Signal, failure, and engine-neutral interfaces. It must not import a durable adapter.
+- `packages/engine-openworkflow/`: placeholder for the planned OpenWorkflow durable adapter; no Worker or serialization implementation exists yet.
+- `packages/testing/`: placeholder; current core runtime tests and all type-tests live under `packages/core/`.
+- `examples/basic/`: executable API usage.
+- `examples/code-agent/`: placeholder for a future durable coding-agent example.
+- `docs/architecture/agent-context.md`: current operational architecture.
+- `docs/superpowers/specs/`: versioned historical designs. Do not silently rewrite older variants.
 - `docs/superpowers/plans/`: implementation plans.
 
-The architecture separates engine-neutral contracts from engine adapters. Typed domain failures must remain distinct from unexpected defects. Durable adapters must preserve structured errors as data rather than relying on an engine's generic exception serializer.
+Typed domain failures remain distinct from unexpected defects. Future durable adapters must preserve structured failures as data rather than relying on generic exception serialization.
 
 # Essential Commands
 
@@ -33,14 +38,16 @@ bun run clean        # remove generated output
 
 # Patterns
 
-- Develop behavior test-first. Run the focused test and observe the expected failure before implementation.
+- Develop behavior test-first. Run the focused runtime test or type-test and observe failure before implementation.
 - Keep public types in focused files; avoid one large barrel containing implementation logic.
-- A Flow interface is a type-only runtime contract; `flow<F>(handler)` creates immutable implementations without tokens or requirement metadata.
-- Dependency aliases resolve by public Layer entry key. Renaming an entry changes binding and durable identity.
-- Provider requirements are static-only in the interface-first variant; handlers receive the full effective provider environment.
-- A Layer chooses Flow implementations and receives structural dependencies through immutable `.provide(...)` calls.
-- Engine adapters implement core interfaces; core never branches on a concrete engine name.
-- Signals are request/response entries declared structurally on a Flow and namespace transitively through Flow/Layer paths.
+- A Flow interface is type-only; `flow<F>(handler)` creates a frozen executable implementation without tokens or requirement metadata.
+- Direct runs supply dependencies as explicit recursive `{ flow, dependencies? }` nodes; `dependencies` is required when the selected Flow still has unresolved children. Layer-bound runs supply only unresolved branches, so a Layer-resolved node may be `{ dependencies: ... }` without `flow`. Bare Flow values are invalid.
+- Layer-bound aliases resolve caller-local first, then unique-global, then supplied fallback for missing or ambiguous aliases.
+- Signals mirror the selected dependency graph. Direct-run root signals are top-level; Layer-bound own signals use the full durable Flow path. Supplied dependency signals use recursive alias paths; Layer-resolved signals use durable Layer paths.
+- `.provide()` adds absent effective requirements. `.override()` replaces existing effective providers. Both are immutable.
+- Path segments are non-empty strings without `.`. Symbols and numeric graph keys are invalid.
+- Core owns the Worker contract and default local Worker. Future durable adapters must implement core interfaces; core must never branch on an adapter name.
+- Typed failures propagate separately from unexpected defects.
 
 # Anti-patterns
 

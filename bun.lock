@@ -16,7 +16,6 @@
       "version": "0.0.0",
       "dependencies": {
         "@flow/core": "workspace:*",
-        "@flow/engine-local": "workspace:*",
       },
     },
     "examples/code-agent": {
@@ -24,7 +23,6 @@
       "version": "0.0.0",
       "dependencies": {
         "@flow/core": "workspace:*",
-        "@flow/engine-local": "workspace:*",
       },
     },
     "packages/core": {
@@ -32,13 +30,6 @@
       "version": "0.0.0",
       "dependencies": {
         "ts-pattern": "^5.8.0",
-      },
-    },
-    "packages/engine-local": {
-      "name": "@flow/engine-local",
-      "version": "0.0.0",
-      "dependencies": {
-        "@flow/core": "workspace:*",
       },
     },
     "packages/engine-openworkflow": {
@@ -81,8 +72,6 @@
     "@flow-example/code-agent": ["@flow-example/code-agent@workspace:examples/code-agent"],
 
     "@flow/core": ["@flow/core@workspace:packages/core"],
-
-    "@flow/engine-local": ["@flow/engine-local@workspace:packages/engine-local"],
 
     "@flow/engine-openworkflow": ["@flow/engine-openworkflow@workspace:packages/engine-openworkflow"],
 

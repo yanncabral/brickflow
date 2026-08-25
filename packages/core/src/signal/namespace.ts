@@ -1,3 +1,4 @@
+import { assertValidPathSegment } from '../path-segment'
 import type { SignalCallMetadata, UnknownSignalHandlers } from './types'
 
 export type NamespacedHandlers<Path extends readonly string[], Handlers> = Path extends readonly [
@@ -15,9 +16,13 @@ export function flattenNamespacedSignalHandlers(
   handlers: Readonly<Record<string, unknown>>,
   path: readonly string[] = []
 ): UnknownSignalHandlers {
-  const flattened: Record<string, NonNullable<UnknownSignalHandlers[string]>> = {}
+  const flattened = Object.create(null) as Record<
+    string,
+    NonNullable<UnknownSignalHandlers[string]>
+  >
 
   for (const [name, value] of Object.entries(handlers)) {
+    assertValidPathSegment(name)
     const durableName = durableSignalName(path, name)
     if (isHandler(value)) {
       flattened[durableName] = value
@@ -40,6 +45,7 @@ export function namespaceSignalHandlers<const Path extends readonly string[], Ha
   path: Path,
   handlers: Handlers
 ): NamespacedHandlers<Path, Handlers> {
+  for (const segment of path) assertValidPathSegment(segment)
   return path.reduceRight<unknown>(
     (nested, segment) => ({ [segment]: nested }),
     handlers
@@ -47,7 +53,9 @@ export function namespaceSignalHandlers<const Path extends readonly string[], Ha
 }
 
 export function durableSignalName(path: readonly string[], signalName: string): string {
-  return [...path, signalName].filter((segment) => segment.length > 0).join('.')
+  for (const segment of path) assertValidPathSegment(segment)
+  assertValidPathSegment(signalName)
+  return [...path, signalName].join('.')
 }
 
 export function signalCallMetadata(

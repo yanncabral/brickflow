@@ -7,6 +7,7 @@ import {
 } from '../src/signal/handler'
 import {
   durableSignalName,
+  flattenNamespacedSignalHandlers,
   namespaceSignalHandlers,
   signalCallMetadata
 } from '../src/signal/namespace'
@@ -19,6 +20,47 @@ describe('signals', () => {
       files: { editFile: { approve: handler } }
     })
     expect(durableSignalName(['files', 'editFile'], 'approve')).toBe('files.editFile.approve')
+  })
+
+  test('rejects empty signal names and namespace segments', () => {
+    expect(() => namespaceSignalHandlers([''], { approve: () => 'invalid' })).toThrow(
+      /invalid path segment.*must not be empty/i
+    )
+    expect(() => durableSignalName(['files'], '')).toThrow(
+      /invalid path segment.*must not be empty/i
+    )
+  })
+
+  test('preserves own prototype-named handlers while flattening namespaces', async () => {
+    const protoHandler = () => '__proto__'
+    const constructorHandler = () => 'constructor'
+    const prototypeHandler = () => 'prototype'
+    const handlers = Object.create(null) as Record<string, unknown>
+    Object.defineProperties(handlers, {
+      ['__proto__']: { enumerable: true, value: protoHandler },
+      constructor: { enumerable: true, value: constructorHandler },
+      prototype: { enumerable: true, value: prototypeHandler }
+    })
+
+    const flattened = flattenNamespacedSignalHandlers(handlers)
+
+    expect(Object.isFrozen(flattened)).toBe(true)
+    expect(Object.hasOwn(flattened, '__proto__')).toBe(true)
+    expect(Object.hasOwn(flattened, 'constructor')).toBe(true)
+    expect(Object.hasOwn(flattened, 'prototype')).toBe(true)
+    expect(Reflect.get(flattened, '__proto__')?.(undefined)).toBe('__proto__')
+    expect(flattened.constructor?.(undefined)).toBe('constructor')
+    expect(Reflect.get(flattened, 'prototype')?.(undefined)).toBe('prototype')
+  })
+
+  test('ignores inherited signal handlers during resolution', async () => {
+    const inherited = () => 'inherited'
+    const handlers = Object.create({ approve: inherited }) as Record<string, typeof inherited>
+    const boundary = Object.freeze({ handlers, boundary: true })
+
+    await expect(resolveSignal(boundary, 'approve', undefined)).rejects.toEqual(
+      new MissingSignalHandlerError('approve')
+    )
   })
 
   test('resolves locally before consulting the parent', async () => {

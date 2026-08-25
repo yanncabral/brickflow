@@ -1,5 +1,4 @@
-import { type Flow, flow, Layer, Worker } from '@flow/core'
-import { LocalEngine } from '@flow/engine-local'
+import { type Flow, flow, Layer } from '@flow/core'
 
 interface User {
   readonly id: string
@@ -72,24 +71,22 @@ export async function runBasicExample(): Promise<BasicExampleOutput> {
   const users = new Layer('users', { getUser, getGreeting, approveGreeting }).provide({
     userRepository
   })
-  const worker = new Worker({ engine: new LocalEngine(), layer: users })
   const approvalRequests: { message: string }[] = []
 
-  const success = await worker
-    .run(getGreeting, { id: 'ada' })
+  const success = await users.getGreeting
+    .run({ id: 'ada' })
     .with('user-not-found', () => ({ message: 'Hello, mysterious stranger!' }))
-  const recovered = await worker
-    .run(getGreeting, { id: 'missing' })
+  const recovered = await users.getGreeting
+    .run({ id: 'missing' })
     .with('user-not-found', () => ({ message: 'Hello, mysterious stranger!' }))
-  const approval = await worker
+  const approval = await users.approveGreeting
     .run(
-      approveGreeting,
       { id: 'ada' },
       {
         signals: {
           users: {
             approveGreeting: {
-              approve: (request) => {
+              approve: (request: { message: string }) => {
                 approvalRequests.push(request)
                 return { approved: true }
               }
