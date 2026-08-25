@@ -11,7 +11,7 @@ export type ValidatePathSegmentKeys<Values extends object> = {
     ? ValidPathSegment<Key> extends never
       ? never
       : Values[Key]
-    : Values[Key]
+    : never
 }
 
 export type HasValidPathSegmentKeys<Values extends object> =
