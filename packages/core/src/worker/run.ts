@@ -1,19 +1,19 @@
 import { isMatching } from 'ts-pattern'
 import type { EngineExecutionHandle, EngineExecutionResult } from '../engine/types'
 import type { SupportedPattern } from '../matching/types'
-import type { FlowRun } from './types'
+import type { BrickRun } from './types'
 
 interface RegisteredHandler {
   readonly pattern: SupportedPattern<unknown>
   readonly handler: (error: never) => unknown | Promise<unknown>
 }
 
-export class UnhandledFlowFailureError extends Error {
+export class UnhandledBrickFailureError extends Error {
   readonly failure: unknown
 
   constructor(failure: unknown) {
-    super(`Unhandled Flow failure: ${readableFailure(failure)}`)
-    this.name = 'UnhandledFlowFailureError'
+    super(`Unhandled Brick failure: ${readableFailure(failure)}`)
+    this.name = 'UnhandledBrickFailureError'
     this.failure = failure
   }
 }
@@ -27,7 +27,7 @@ function readableFailure(failure: unknown): string {
   }
 }
 
-class FlowRunImplementation<Error, InitialSuccess, LocalResult, RemainingError> {
+class BrickRunImplementation<Error, InitialSuccess, LocalResult, RemainingError> {
   readonly id: string
   readonly #handle: EngineExecutionHandle<InitialSuccess, Error>
   readonly #handlers: readonly RegisteredHandler[]
@@ -52,13 +52,13 @@ class FlowRunImplementation<Error, InitialSuccess, LocalResult, RemainingError> 
   }
 
   with(pattern: SupportedPattern<RemainingError>, handler: (error: never) => unknown) {
-    return new FlowRunImplementation(this.#handle, [
+    return new BrickRunImplementation(this.#handle, [
       ...this.#handlers,
       { pattern: pattern as SupportedPattern<unknown>, handler }
     ])
   }
 
-  // biome-ignore lint/suspicious/noThenProperty: exhaustive FlowRun values are intentionally PromiseLike
+  // biome-ignore lint/suspicious/noThenProperty: exhaustive BrickRun values are intentionally PromiseLike
   then<TResult1 = LocalResult, TResult2 = never>(
     onfulfilled?: ((value: LocalResult) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
@@ -75,17 +75,17 @@ class FlowRunImplementation<Error, InitialSuccess, LocalResult, RemainingError> 
       if (!isMatching(registered.pattern)(outcome.error)) continue
       const recovered = await registered.handler(outcome.error as never)
       if (recovered !== undefined) return recovered as LocalResult
-      throw new UnhandledFlowFailureError(outcome.error)
+      throw new UnhandledBrickFailureError(outcome.error)
     }
 
-    throw new UnhandledFlowFailureError(outcome.error)
+    throw new UnhandledBrickFailureError(outcome.error)
   }
 }
 
-export function createFlowRun<Error, Success>(
+export function createBrickRun<Error, Success>(
   handle: EngineExecutionHandle<Success, Error>
-): FlowRun<Error, Success> {
-  return new FlowRunImplementation<Error, Success, Success, Error>(handle) as unknown as FlowRun<
+): BrickRun<Error, Success> {
+  return new BrickRunImplementation<Error, Success, Success, Error>(handle) as unknown as BrickRun<
     Error,
     Success
   >

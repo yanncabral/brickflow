@@ -1,57 +1,57 @@
 import {
+  type Brick,
+  type BrickRunOptions,
+  brick,
   type EngineExecutionHandle,
   type EngineExecutionRequest,
-  type Flow,
-  type FlowRunOptions,
-  flow,
   Layer,
   type Worker
 } from '../src/index'
 
 type Empty = Record<never, never>
 
-interface PlainFlow extends Flow {
+interface PlainBrick extends Brick {
   params: { value: number }
   result: number
 }
 
-interface GrandchildFlow extends Flow {
+interface GrandchildBrick extends Brick {
   params: { id: string }
   result: string
   requires: { logger: { log(message: string): void } }
 }
 
-interface ChildFlow extends Flow {
+interface ChildBrick extends Brick {
   params: { id: string }
   result: string
   requires: { repository: { find(id: string): string } }
-  depends: { grandchild: GrandchildFlow }
+  depends: { grandchild: GrandchildBrick }
 }
 
-interface ConfiguredFlow extends Flow {
+interface ConfiguredBrick extends Brick {
   params: { id: string }
   result: string
-  depends: { child: ChildFlow }
+  depends: { child: ChildBrick }
 }
 
-interface SignalledFlow extends Flow {
+interface SignalledBrick extends Brick {
   params: { id: string }
   result: boolean
   signals: { approve: { request: { id: string }; response: boolean } }
 }
 
-const plain = flow<PlainFlow>(({ value }) => value)
-const grandchild = flow<GrandchildFlow>(({ id }, { logger }) => {
+const plain = brick<PlainBrick>(({ value }) => value)
+const grandchild = brick<GrandchildBrick>(({ id }, { logger }) => {
   logger.log(id)
   return id
 })
-const child = flow<ChildFlow>(async ({ id }, { repository }, dependencies) =>
+const child = brick<ChildBrick>(async ({ id }, { repository }, dependencies) =>
   dependencies.grandchild({ id: repository.find(id) })
 )
-const configured = flow<ConfiguredFlow>(async ({ id }, _requirements, dependencies) =>
+const configured = brick<ConfiguredBrick>(async ({ id }, _requirements, dependencies) =>
   dependencies.child({ id })
 )
-const signalled = flow<SignalledFlow>(async ({ id }, _requirements, _dependencies, tools) =>
+const signalled = brick<SignalledBrick>(async ({ id }, _requirements, _dependencies, tools) =>
   tools.signals.approve({ id })
 )
 
@@ -66,7 +66,7 @@ const configuredResult: string = await configured.run(
   {
     requirements: { repository, logger },
     dependencies: {
-      child: { flow: child, dependencies: { grandchild: { flow: grandchild } } }
+      child: { brick: child, dependencies: { grandchild: { brick: grandchild } } }
     }
   }
 )
@@ -92,7 +92,7 @@ configured.run(
   {
     requirements: { repository, logger },
     dependencies: {
-      // @ts-expect-error bare Flow dependency values are rejected
+      // @ts-expect-error bare Brick dependency values are rejected
       child
     }
   }
@@ -103,7 +103,7 @@ configured.run(
     requirements: { repository, logger },
     dependencies: {
       // @ts-expect-error nested dependencies are required while child remains unresolved
-      child: { flow: child }
+      child: { brick: child }
     }
   }
 )
@@ -114,7 +114,7 @@ configured.run(
   {
     requirements: { repository, logger },
     dependencies: {
-      child: { flow: child, dependencies: { grandchild: { flow: grandchild } } }
+      child: { brick: child, dependencies: { grandchild: { brick: grandchild } } }
     },
     worker: customWorker
   }
@@ -133,7 +133,7 @@ const missingGrandchild = new Layer('missing-grandchild', { configured, child })
 missingGrandchild.configured.run({ id: 'ada' })
 missingGrandchild.configured.run(
   { id: 'ada' },
-  { dependencies: { child: { dependencies: { grandchild: { flow: grandchild } } } } }
+  { dependencies: { child: { dependencies: { grandchild: { brick: grandchild } } } } }
 )
 
 const nestedProvider = new Layer('nested-provider', { child, grandchild }).provide({
@@ -160,22 +160,22 @@ signalledLayer.signalled.run(
 // @ts-expect-error bound signal handlers are required
 signalledLayer.signalled.run({ id: 'ada' })
 
-interface SuppliedSignalledChildFlow extends Flow {
+interface SuppliedSignalledChildBrick extends Brick {
   params: { id: string }
   result: boolean
   signals: { approve: { request: { id: string }; response: boolean } }
 }
 
-interface SuppliedSignalledParentFlow extends Flow {
+interface SuppliedSignalledParentBrick extends Brick {
   params: { id: string }
   result: boolean
-  depends: { child: SuppliedSignalledChildFlow }
+  depends: { child: SuppliedSignalledChildBrick }
 }
 
-const suppliedSignalledChild = flow<SuppliedSignalledChildFlow>(
+const suppliedSignalledChild = brick<SuppliedSignalledChildBrick>(
   async ({ id }, _requirements, _dependencies, { signals }) => signals.approve({ id })
 )
-const suppliedSignalledParent = flow<SuppliedSignalledParentFlow>(
+const suppliedSignalledParent = brick<SuppliedSignalledParentBrick>(
   async ({ id }, _requirements, { child }) => child({ id })
 )
 const suppliedSignalsApp = new Layer('app', { parent: suppliedSignalledParent })
@@ -183,27 +183,27 @@ const suppliedSignalsApp = new Layer('app', { parent: suppliedSignalledParent })
 suppliedSignalsApp.parent.run(
   { id: 'ada' },
   {
-    dependencies: { child: { flow: suppliedSignalledChild } },
+    dependencies: { child: { brick: suppliedSignalledChild } },
     signals: { child: { approve: ({ id }) => id === 'ada' } }
   }
 )
 suppliedSignalsApp.parent.run(
   { id: 'ada' },
   {
-    dependencies: { child: { flow: suppliedSignalledChild } },
+    dependencies: { child: { brick: suppliedSignalledChild } },
     // @ts-expect-error supplied dependency signal handlers remain required
     signals: {}
   }
 )
 
-interface MixedSignalledParentFlow extends Flow {
+interface MixedSignalledParentBrick extends Brick {
   params: { id: string }
   result: boolean
-  depends: { child: SuppliedSignalledChildFlow }
+  depends: { child: SuppliedSignalledChildBrick }
   signals: { confirm: { request: { id: string }; response: boolean } }
 }
 
-const mixedSignalledParent = flow<MixedSignalledParentFlow>(
+const mixedSignalledParent = brick<MixedSignalledParentBrick>(
   async ({ id }, _requirements, { child }, { signals }) =>
     (await signals.confirm({ id })) && child({ id })
 )
@@ -211,7 +211,7 @@ const mixedSignalsApp = new Layer('app', { parent: mixedSignalledParent })
 mixedSignalsApp.parent.run(
   { id: 'ada' },
   {
-    dependencies: { child: { flow: suppliedSignalledChild } },
+    dependencies: { child: { brick: suppliedSignalledChild } },
     signals: {
       app: { parent: { confirm: ({ id }) => id === 'ada' } },
       child: { approve: ({ id }) => id === 'ada' }
@@ -221,7 +221,7 @@ mixedSignalsApp.parent.run(
 mixedSignalsApp.parent.run(
   { id: 'ada' },
   {
-    dependencies: { child: { flow: suppliedSignalledChild } },
+    dependencies: { child: { brick: suppliedSignalledChild } },
     // @ts-expect-error mixed signal handlers require the Layer-resolved namespace
     signals: { child: { approve: ({ id }) => id === 'ada' } }
   }
@@ -231,29 +231,29 @@ const app = new Layer('app', { nested: complete })
 const nestedResult: string = await app.nested.configured.run({ id: 'ada' })
 void nestedResult
 
-interface ScopedRepositoryFlow extends Flow {
+interface ScopedRepositoryBrick extends Brick {
   params: undefined
   result: string
 }
 
-interface ScopedCheckoutFlow extends Flow {
+interface ScopedCheckoutBrick extends Brick {
   params: undefined
   result: string
-  depends: { repository: ScopedRepositoryFlow }
+  depends: { repository: ScopedRepositoryBrick }
 }
 
-interface ScopedPlaceOrderFlow extends Flow {
+interface ScopedPlaceOrderBrick extends Brick {
   params: undefined
   result: string
-  depends: { checkout: ScopedCheckoutFlow }
+  depends: { checkout: ScopedCheckoutBrick }
 }
 
-const scopedRepository = flow<ScopedRepositoryFlow>(() => 'repository')
-const scopedCheckout = flow<ScopedCheckoutFlow>(async (_params, _requirements, dependencies) =>
+const scopedRepository = brick<ScopedRepositoryBrick>(() => 'repository')
+const scopedCheckout = brick<ScopedCheckoutBrick>(async (_params, _requirements, dependencies) =>
   dependencies.repository(undefined)
 )
-const scopedPlaceOrder = flow<ScopedPlaceOrderFlow>(async (_params, _requirements, dependencies) =>
-  dependencies.checkout(undefined)
+const scopedPlaceOrder = brick<ScopedPlaceOrderBrick>(
+  async (_params, _requirements, dependencies) => dependencies.checkout(undefined)
 )
 
 const checkoutWithLocalRepository = new Layer('checkout', {
@@ -268,24 +268,24 @@ const locallyResolvedApp = new Layer('app', {
 })
 locallyResolvedApp.placeOrder.run(undefined)
 
-interface LayerResolvedRepositoryFlow extends Flow {
+interface LayerResolvedRepositoryBrick extends Brick {
   params: undefined
   result: string
   signals: { refresh: { request: undefined; response: string } }
 }
-interface LayerResolvedCheckoutFlow extends Flow {
+interface LayerResolvedCheckoutBrick extends Brick {
   params: undefined
   result: string
-  depends: { repository: LayerResolvedRepositoryFlow }
+  depends: { repository: LayerResolvedRepositoryBrick }
 }
-interface LayerResolvedOrderFlow extends Flow {
+interface LayerResolvedOrderBrick extends Brick {
   params: undefined
   result: string
-  depends: { checkout: LayerResolvedCheckoutFlow }
+  depends: { checkout: LayerResolvedCheckoutBrick }
 }
-const layerResolvedRepository = flow<LayerResolvedRepositoryFlow>(() => 'repository')
-const layerResolvedCheckout = flow<LayerResolvedCheckoutFlow>(() => 'checkout')
-const layerResolvedOrder = flow<LayerResolvedOrderFlow>(() => 'order')
+const layerResolvedRepository = brick<LayerResolvedRepositoryBrick>(() => 'repository')
+const layerResolvedCheckout = brick<LayerResolvedCheckoutBrick>(() => 'checkout')
+const layerResolvedOrder = brick<LayerResolvedOrderBrick>(() => 'order')
 const layerResolvedSignalApp = new Layer('app', {
   order: layerResolvedOrder,
   checkout: new Layer('checkout', {
@@ -315,7 +315,7 @@ const suppliedCheckoutApp = new Layer('supplied-checkout-app', {
   repository: scopedRepository
 })
 suppliedCheckoutApp.placeOrder.run(undefined, {
-  dependencies: { checkout: { flow: scopedCheckout } }
+  dependencies: { checkout: { brick: scopedCheckout } }
 })
 
 const checkoutWithoutRepository = new Layer('checkout-without-repository', {
@@ -332,7 +332,7 @@ const ambiguouslyResolvedApp = new Layer('ambiguous-app', {
 ambiguouslyResolvedApp.placeOrder.run(undefined)
 ambiguouslyResolvedApp.placeOrder.run(undefined, {
   dependencies: {
-    checkout: { dependencies: { repository: { flow: scopedRepository } } }
+    checkout: { dependencies: { repository: { brick: scopedRepository } } }
   }
 })
 
@@ -351,7 +351,7 @@ const transitivelyUnresolvedApp = new Layer('transitively-unresolved-app', {
 transitivelyUnresolvedApp.placeOrder.run(undefined)
 transitivelyUnresolvedApp.placeOrder.run(undefined, {
   dependencies: {
-    checkout: { dependencies: { repository: { flow: scopedRepository } } }
+    checkout: { dependencies: { repository: { brick: scopedRepository } } }
   }
 })
 
@@ -361,126 +361,126 @@ const directlyUnresolvedApp = new Layer('directly-unresolved-app', {
 directlyUnresolvedApp.placeOrder.run(undefined, {
   dependencies: {
     // @ts-expect-error unresolved direct nodes require their recursive child dependencies
-    checkout: { flow: scopedCheckout }
+    checkout: { brick: scopedCheckout }
   }
 })
 directlyUnresolvedApp.placeOrder.run(undefined, {
   dependencies: {
     checkout: {
-      flow: scopedCheckout,
-      dependencies: { repository: { flow: scopedRepository } }
+      brick: scopedCheckout,
+      dependencies: { repository: { brick: scopedRepository } }
     }
   }
 })
 
-interface DepthLeafFlow extends Flow {
+interface DepthLeafBrick extends Brick {
   params: undefined
   result: undefined
 }
-interface Depth16Flow extends Flow {
+interface Depth16Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { leaf: DepthLeafFlow }
+  depends: { leaf: DepthLeafBrick }
 }
-interface Depth15Flow extends Flow {
+interface Depth15Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth16: Depth16Flow }
+  depends: { depth16: Depth16Brick }
 }
-interface Depth14Flow extends Flow {
+interface Depth14Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth15: Depth15Flow }
+  depends: { depth15: Depth15Brick }
 }
-interface Depth13Flow extends Flow {
+interface Depth13Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth14: Depth14Flow }
+  depends: { depth14: Depth14Brick }
 }
-interface Depth12Flow extends Flow {
+interface Depth12Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth13: Depth13Flow }
+  depends: { depth13: Depth13Brick }
 }
-interface Depth11Flow extends Flow {
+interface Depth11Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth12: Depth12Flow }
+  depends: { depth12: Depth12Brick }
 }
-interface Depth10Flow extends Flow {
+interface Depth10Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth11: Depth11Flow }
+  depends: { depth11: Depth11Brick }
 }
-interface Depth9Flow extends Flow {
+interface Depth9Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth10: Depth10Flow }
+  depends: { depth10: Depth10Brick }
 }
-interface Depth8Flow extends Flow {
+interface Depth8Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth9: Depth9Flow }
+  depends: { depth9: Depth9Brick }
 }
-interface Depth7Flow extends Flow {
+interface Depth7Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth8: Depth8Flow }
+  depends: { depth8: Depth8Brick }
 }
-interface Depth6Flow extends Flow {
+interface Depth6Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth7: Depth7Flow }
+  depends: { depth7: Depth7Brick }
 }
-interface Depth5Flow extends Flow {
+interface Depth5Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth6: Depth6Flow }
+  depends: { depth6: Depth6Brick }
 }
-interface Depth4Flow extends Flow {
+interface Depth4Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth5: Depth5Flow }
+  depends: { depth5: Depth5Brick }
 }
-interface Depth3Flow extends Flow {
+interface Depth3Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth4: Depth4Flow }
+  depends: { depth4: Depth4Brick }
 }
-interface Depth2Flow extends Flow {
+interface Depth2Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth3: Depth3Flow }
+  depends: { depth3: Depth3Brick }
 }
-interface Depth1Flow extends Flow {
+interface Depth1Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth2: Depth2Flow }
+  depends: { depth2: Depth2Brick }
 }
-interface DepthRootFlow extends Flow {
+interface DepthRootBrick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth1: Depth1Flow }
+  depends: { depth1: Depth1Brick }
 }
 
-declare const depthRoot: ReturnType<typeof flow<DepthRootFlow>>
-declare const depth1: ReturnType<typeof flow<Depth1Flow>>
-declare const depth2: ReturnType<typeof flow<Depth2Flow>>
-declare const depth3: ReturnType<typeof flow<Depth3Flow>>
-declare const depth4: ReturnType<typeof flow<Depth4Flow>>
-declare const depth5: ReturnType<typeof flow<Depth5Flow>>
-declare const depth6: ReturnType<typeof flow<Depth6Flow>>
-declare const depth7: ReturnType<typeof flow<Depth7Flow>>
-declare const depth8: ReturnType<typeof flow<Depth8Flow>>
-declare const depth9: ReturnType<typeof flow<Depth9Flow>>
-declare const depth10: ReturnType<typeof flow<Depth10Flow>>
-declare const depth11: ReturnType<typeof flow<Depth11Flow>>
-declare const depth12: ReturnType<typeof flow<Depth12Flow>>
-declare const depth13: ReturnType<typeof flow<Depth13Flow>>
-declare const depth14: ReturnType<typeof flow<Depth14Flow>>
-declare const depth15: ReturnType<typeof flow<Depth15Flow>>
-declare const depth16: ReturnType<typeof flow<Depth16Flow>>
-declare const depthLeaf: ReturnType<typeof flow<DepthLeafFlow>>
+declare const depthRoot: ReturnType<typeof brick<DepthRootBrick>>
+declare const depth1: ReturnType<typeof brick<Depth1Brick>>
+declare const depth2: ReturnType<typeof brick<Depth2Brick>>
+declare const depth3: ReturnType<typeof brick<Depth3Brick>>
+declare const depth4: ReturnType<typeof brick<Depth4Brick>>
+declare const depth5: ReturnType<typeof brick<Depth5Brick>>
+declare const depth6: ReturnType<typeof brick<Depth6Brick>>
+declare const depth7: ReturnType<typeof brick<Depth7Brick>>
+declare const depth8: ReturnType<typeof brick<Depth8Brick>>
+declare const depth9: ReturnType<typeof brick<Depth9Brick>>
+declare const depth10: ReturnType<typeof brick<Depth10Brick>>
+declare const depth11: ReturnType<typeof brick<Depth11Brick>>
+declare const depth12: ReturnType<typeof brick<Depth12Brick>>
+declare const depth13: ReturnType<typeof brick<Depth13Brick>>
+declare const depth14: ReturnType<typeof brick<Depth14Brick>>
+declare const depth15: ReturnType<typeof brick<Depth15Brick>>
+declare const depth16: ReturnType<typeof brick<Depth16Brick>>
+declare const depthLeaf: ReturnType<typeof brick<DepthLeafBrick>>
 
 const depthBoundedLayer = new Layer('depth-bounded', {
   depthRoot,
@@ -538,7 +538,7 @@ depthBoundedLayer.depthRoot.run(undefined, {
                                                                 depth16: {
                                                                   dependencies: {
                                                                     leaf: {
-                                                                      flow: depthLeaf,
+                                                                      brick: depthLeaf,
                                                                       dependencies: {}
                                                                     }
                                                                   }
@@ -585,99 +585,99 @@ depthBoundedLayer.depthRoot.run(undefined, {
   }
 })
 
-interface DepthSignalLeafFlow extends Flow {
+interface DepthSignalLeafBrick extends Brick {
   params: undefined
   result: undefined
   signals: { refresh: { request: undefined; response: boolean } }
 }
-interface DepthSignal16Flow extends Flow {
+interface DepthSignal16Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { leaf: DepthSignalLeafFlow }
+  depends: { leaf: DepthSignalLeafBrick }
 }
-interface DepthSignal15Flow extends Flow {
+interface DepthSignal15Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth16: DepthSignal16Flow }
+  depends: { depth16: DepthSignal16Brick }
 }
-interface DepthSignal14Flow extends Flow {
+interface DepthSignal14Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth15: DepthSignal15Flow }
+  depends: { depth15: DepthSignal15Brick }
 }
-interface DepthSignal13Flow extends Flow {
+interface DepthSignal13Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth14: DepthSignal14Flow }
+  depends: { depth14: DepthSignal14Brick }
 }
-interface DepthSignal12Flow extends Flow {
+interface DepthSignal12Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth13: DepthSignal13Flow }
+  depends: { depth13: DepthSignal13Brick }
 }
-interface DepthSignal11Flow extends Flow {
+interface DepthSignal11Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth12: DepthSignal12Flow }
+  depends: { depth12: DepthSignal12Brick }
 }
-interface DepthSignal10Flow extends Flow {
+interface DepthSignal10Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth11: DepthSignal11Flow }
+  depends: { depth11: DepthSignal11Brick }
 }
-interface DepthSignal9Flow extends Flow {
+interface DepthSignal9Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth10: DepthSignal10Flow }
+  depends: { depth10: DepthSignal10Brick }
 }
-interface DepthSignal8Flow extends Flow {
+interface DepthSignal8Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth9: DepthSignal9Flow }
+  depends: { depth9: DepthSignal9Brick }
 }
-interface DepthSignal7Flow extends Flow {
+interface DepthSignal7Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth8: DepthSignal8Flow }
+  depends: { depth8: DepthSignal8Brick }
 }
-interface DepthSignal6Flow extends Flow {
+interface DepthSignal6Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth7: DepthSignal7Flow }
+  depends: { depth7: DepthSignal7Brick }
 }
-interface DepthSignal5Flow extends Flow {
+interface DepthSignal5Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth6: DepthSignal6Flow }
+  depends: { depth6: DepthSignal6Brick }
 }
-interface DepthSignal4Flow extends Flow {
+interface DepthSignal4Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth5: DepthSignal5Flow }
+  depends: { depth5: DepthSignal5Brick }
 }
-interface DepthSignal3Flow extends Flow {
+interface DepthSignal3Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth4: DepthSignal4Flow }
+  depends: { depth4: DepthSignal4Brick }
 }
-interface DepthSignal2Flow extends Flow {
+interface DepthSignal2Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth3: DepthSignal3Flow }
+  depends: { depth3: DepthSignal3Brick }
 }
-interface DepthSignal1Flow extends Flow {
+interface DepthSignal1Brick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth2: DepthSignal2Flow }
+  depends: { depth2: DepthSignal2Brick }
 }
-interface DepthSignalRootFlow extends Flow {
+interface DepthSignalRootBrick extends Brick {
   params: undefined
   result: undefined
-  depends: { depth1: DepthSignal1Flow }
+  depends: { depth1: DepthSignal1Brick }
 }
 
-declare const depthSignalRoot: ReturnType<typeof flow<DepthSignalRootFlow>>
-type DepthSignalRunOptions = FlowRunOptions<DepthSignalRootFlow>
+declare const depthSignalRoot: ReturnType<typeof brick<DepthSignalRootBrick>>
+type DepthSignalRunOptions = BrickRunOptions<DepthSignalRootBrick>
 // @ts-expect-error depth exhaustion must not make required deeper signal config disappear
 const omittedDepthSignalOptions: DepthSignalRunOptions = { dependencies: {} as never }
 const emptyDepthSignalOptions: DepthSignalRunOptions = {
@@ -695,27 +695,27 @@ void omittedDepthSignalOptions
 void emptyDepthSignalOptions
 void incompleteDepthSignalOptions
 
-interface BooleanSignalChildFlow extends Flow {
+interface BooleanSignalChildBrick extends Brick {
   params: undefined
   result: undefined
   signals: { approve: { request: undefined; response: boolean } }
 }
-interface StringSignalChildFlow extends Flow {
+interface StringSignalChildBrick extends Brick {
   params: undefined
   result: undefined
   signals: { approve: { request: undefined; response: string } }
 }
-interface BooleanSignalParentFlow extends Flow {
+interface BooleanSignalParentBrick extends Brick {
   params: undefined
   result: undefined
-  depends: { child: BooleanSignalChildFlow }
+  depends: { child: BooleanSignalChildBrick }
 }
-declare const booleanSignalParent: ReturnType<typeof flow<BooleanSignalParentFlow>>
-declare const stringSignalChild: ReturnType<typeof flow<StringSignalChildFlow>>
+declare const booleanSignalParent: ReturnType<typeof brick<BooleanSignalParentBrick>>
+declare const stringSignalChild: ReturnType<typeof brick<StringSignalChildBrick>>
 booleanSignalParent.run(undefined, {
   dependencies: {
     // @ts-expect-error incompatible signal contracts at the same dependency path are rejected
-    child: { flow: stringSignalChild }
+    child: { brick: stringSignalChild }
   },
   signals: { child: { approve: () => true } }
 })

@@ -1,4 +1,26 @@
 export { P } from 'ts-pattern'
+export type { Brick } from './brick/contract'
+export { brick } from './brick/contract'
+export type {
+  BrickExecutionResult,
+  BrickHandler,
+  BrickImplementation,
+  BrickOf,
+  BrickRunOptionArgs,
+  BrickRunOptions,
+  BrickTools,
+  DependenciesOf,
+  DependencyFunctions,
+  EffectiveDependenciesOf,
+  EffectiveErrorsOf,
+  EffectiveRequirementsOf,
+  EffectiveSignalsOf,
+  ErrorsOf,
+  ParamsOf,
+  RequirementsOf,
+  ResultOf,
+  SignalsOf
+} from './brick/types'
 export type { ExecutionContextOptions } from './engine/execution-context'
 export { ExecutionContext } from './engine/execution-context'
 export type {
@@ -8,28 +30,6 @@ export type {
   EngineSignalRequest,
   EngineStatus
 } from './engine/types'
-export type { Flow } from './flow/contract'
-export { flow } from './flow/contract'
-export type {
-  DependenciesOf,
-  DependencyFunctions,
-  EffectiveDependenciesOf,
-  EffectiveErrorsOf,
-  EffectiveRequirementsOf,
-  EffectiveSignalsOf,
-  ErrorsOf,
-  FlowExecutionResult,
-  FlowHandler,
-  FlowImplementation,
-  FlowOf,
-  FlowRunOptionArgs,
-  FlowRunOptions,
-  FlowTools,
-  ParamsOf,
-  RequirementsOf,
-  ResultOf,
-  SignalsOf
-} from './flow/types'
 export { Layer } from './layer/layer'
 export type {
   AnyLayer,
@@ -73,11 +73,11 @@ export {
   LocalWorker,
   localWorker
 } from './worker/local-worker'
-export { UnhandledFlowFailureError } from './worker/run'
+export { UnhandledBrickFailureError } from './worker/run'
 export type {
-  CompleteFlowRun,
-  FlowRun,
-  FlowRunControls,
-  IncompleteFlowRun,
+  BrickRun,
+  BrickRunControls,
+  CompleteBrickRun,
+  IncompleteBrickRun,
   RunMetadata
 } from './worker/types'

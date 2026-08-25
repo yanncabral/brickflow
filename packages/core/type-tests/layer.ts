@@ -1,6 +1,6 @@
 import {
-  type Flow,
-  flow,
+  type Brick,
+  brick,
   Layer,
   type LayerEntriesOf,
   type LayerProvidersOf,
@@ -12,20 +12,20 @@ import {
 type Database = { find(id: string): string }
 type Logger = { log(message: string): void }
 
-interface GetUserFlow extends Flow {
+interface GetUserBrick extends Brick {
   params: { id: string }
   result: { id: string }
   requires: { database: Database; logger: Logger }
 }
 
-interface AuditFlow extends Flow {
+interface AuditBrick extends Brick {
   params: undefined
   result: undefined
   requires: { logger: Logger }
 }
 
-const getUser = flow<GetUserFlow>(({ id }) => ({ id }))
-const audit = flow<AuditFlow>(() => undefined)
+const getUser = brick<GetUserBrick>(({ id }) => ({ id }))
+const audit = brick<AuditBrick>(() => undefined)
 const users = new Layer('users', { getUser })
 const application = new Layer('application', { users, audit })
 
@@ -56,7 +56,7 @@ const applicationWithNestedProviders = new Layer('application-with-nested-provid
 
 // @ts-expect-error nested-only providers are not exposed on the outer Layer
 applicationWithNestedProviders.providers.database
-// Nested providers still satisfy bound Flow requirements across the complete Layer tree.
+// Nested providers still satisfy bound Brick requirements across the complete Layer tree.
 applicationWithNestedProviders.audit.run(undefined)
 
 declare const applicationWithNestedProviderMap: LayerProvidersOf<
@@ -84,7 +84,7 @@ withDatabase.provide({ database })
 withDatabase.override({ logger })
 // @ts-expect-error provider values must satisfy the effective requirement
 application.provide({ database: { find: (_id: number) => 'invalid' } })
-// @ts-expect-error Layer entries must be Flow implementations or Layers
+// @ts-expect-error Layer entries must be Brick implementations or Layers
 new Layer('invalid', { invalid: {} })
 // @ts-expect-error reserved names cannot be used as entries
 new Layer('invalid', { provide: getUser })
@@ -106,21 +106,21 @@ new Layer('valid', { 'get.user': getUser })
 
 type Repository = { get(id: string): string }
 
-interface RepositoryFlow extends Flow {
+interface RepositoryBrick extends Brick {
   params: undefined
   result: undefined
   requires: { repository: Repository }
 }
 
-interface TransitiveRequirementFlow extends Flow {
+interface TransitiveRequirementBrick extends Brick {
   params: undefined
   result: undefined
-  depends: { repositoryWorker: RepositoryFlow }
+  depends: { repositoryWorker: RepositoryBrick }
 }
 
 const repository: Repository = { get: (id) => id }
-const repositoryWorker = flow<RepositoryFlow>(() => undefined)
-const transitiveRequirement = flow<TransitiveRequirementFlow>(
+const repositoryWorker = brick<RepositoryBrick>(() => undefined)
+const transitiveRequirement = brick<TransitiveRequirementBrick>(
   async (_params, _requirements, { repositoryWorker: runRepositoryWorker }) =>
     runRepositoryWorker(undefined)
 )
@@ -140,7 +140,7 @@ type _TransitiveRepositoryRemainsUnprovided = Expect<
   >
 >
 
-// Direct Flow effective requirements validate transitive provider values.
+// Direct Brick effective requirements validate transitive provider values.
 // @ts-expect-error transitive provider must satisfy Repository
 directTransitiveLayer.provide({ repository: 1 })
 // Nested Layers preserve effective requirement validation at every level.
@@ -155,18 +155,18 @@ const twoLevelTransitiveProvided = twoLevelTransitiveLayer.provide({ repository 
 
 // Valid providers remove the transitive requirement from bound run options.
 directTransitiveProvided.transitiveRequirement.run(undefined, {
-  dependencies: { repositoryWorker: { flow: repositoryWorker } }
+  dependencies: { repositoryWorker: { brick: repositoryWorker } }
 })
 oneLevelTransitiveProvided.nested.transitiveRequirement.run(undefined, {
-  dependencies: { repositoryWorker: { flow: repositoryWorker } }
+  dependencies: { repositoryWorker: { brick: repositoryWorker } }
 })
 twoLevelTransitiveProvided.nested.nested.transitiveRequirement.run(undefined, {
-  dependencies: { repositoryWorker: { flow: repositoryWorker } }
+  dependencies: { repositoryWorker: { brick: repositoryWorker } }
 })
 
 const oneLevelTransitiveOverridden = oneLevelTransitiveProvided.override({ repository })
 oneLevelTransitiveOverridden.nested.transitiveRequirement.run(undefined, {
-  dependencies: { repositoryWorker: { flow: repositoryWorker } }
+  dependencies: { repositoryWorker: { brick: repositoryWorker } }
 })
 
 // @ts-expect-error overrides validate nested transitive requirement values
@@ -201,13 +201,13 @@ outerRepositoryProvided.override({ repository: 1 })
 // @ts-expect-error truly absent provider keys cannot be overridden
 outerRepositoryProvided.override({ arbitrary: true })
 
-interface ConflictingTransitiveRepositoryFlow extends Flow {
+interface ConflictingTransitiveRepositoryBrick extends Brick {
   params: undefined
   result: undefined
   requires: { repository: number }
 }
 
-const conflictingTransitiveRepository = flow<ConflictingTransitiveRepositoryFlow>(() => undefined)
+const conflictingTransitiveRepository = brick<ConflictingTransitiveRepositoryBrick>(() => undefined)
 const nestedEffectiveConflictLayer = new Layer('nested-effective-conflict', {
   nested: oneLevelTransitiveLayer,
   conflictingTransitiveRepository
@@ -219,19 +219,19 @@ type PrimaryService = { kind: 'primary'; run(): string }
 type SecondaryService = { kind: 'secondary'; run(): string }
 type UnionService = PrimaryService | SecondaryService
 
-interface UnionServiceFlow extends Flow {
+interface UnionServiceBrick extends Brick {
   params: undefined
   result: undefined
   requires: { service: UnionService }
 }
-interface CompatibleUnionServiceFlow extends Flow {
+interface CompatibleUnionServiceBrick extends Brick {
   params: undefined
   result: undefined
   requires: { service: UnionService }
 }
 
-const unionService = flow<UnionServiceFlow>(() => undefined)
-const compatibleUnionService = flow<CompatibleUnionServiceFlow>(() => undefined)
+const unionService = brick<UnionServiceBrick>(() => undefined)
+const compatibleUnionService = brick<CompatibleUnionServiceBrick>(() => undefined)
 const singleUnionLayer = new Layer('single-union', { unionService })
 const duplicateUnionLayer = new Layer('duplicate-union', {
   unionService,
@@ -245,33 +245,33 @@ duplicateUnionRequirement satisfies UnionService
 singleUnionLayer.provide({ service: { kind: 'primary', run: () => 'ok' } })
 duplicateUnionLayer.provide({ service: { kind: 'secondary', run: () => 'ok' } })
 
-interface DeclaredDependencyFlow extends Flow {
+interface DeclaredDependencyBrick extends Brick {
   params: { id: string }
   result: string
 }
-interface CompatibleDependencyFlow extends Flow {
+interface CompatibleDependencyBrick extends Brick {
   params: { id: string }
   result: string
 }
-interface IncompatibleDependencyFlow extends Flow {
+interface IncompatibleDependencyBrick extends Brick {
   params: { count: number }
   result: number
 }
-interface DependencyCallerFlow extends Flow {
+interface DependencyCallerBrick extends Brick {
   params: undefined
   result: string
-  depends: { child: DeclaredDependencyFlow }
+  depends: { child: DeclaredDependencyBrick }
 }
 
-const compatibleDependency = flow<CompatibleDependencyFlow>(({ id }) => id)
-const incompatibleDependency = flow<IncompatibleDependencyFlow>(({ count }) => count)
-const dependencyCaller = flow<DependencyCallerFlow>(async (_params, _requirements, { child }) =>
+const compatibleDependency = brick<CompatibleDependencyBrick>(({ id }) => id)
+const incompatibleDependency = brick<IncompatibleDependencyBrick>(({ count }) => count)
+const dependencyCaller = brick<DependencyCallerBrick>(async (_params, _requirements, { child }) =>
   child({ id: '1' })
 )
 
 new Layer('missing-dependency', { dependencyCaller })
 new Layer('compatible-direct-dependency', { dependencyCaller, child: compatibleDependency })
-// @ts-expect-error a present dependency alias must implement the declared Flow shape
+// @ts-expect-error a present dependency alias must implement the declared Brick shape
 new Layer('incompatible-direct-dependency', { dependencyCaller, child: incompatibleDependency })
 
 const compatibleNestedDependency = new Layer('compatible-nested-dependency', {
@@ -285,7 +285,7 @@ new Layer('compatible-global-dependency', {
   compatibleNestedDependency
 })
 new Layer('incompatible-global-dependency', {
-  // @ts-expect-error a structurally resolved nested dependency must implement the declared Flow shape
+  // @ts-expect-error a structurally resolved nested dependency must implement the declared Brick shape
   dependencyCaller,
   incompatibleNestedDependency
 })
@@ -302,7 +302,7 @@ new Layer('compatible-top-level-fallback', {
 })
 
 new Layer('incompatible-top-level-fallback', {
-  // @ts-expect-error a nested caller's global fallback must implement the declared Flow shape
+  // @ts-expect-error a nested caller's global fallback must implement the declared Brick shape
   nestedDependencyCaller,
   child: incompatibleDependency
 })
@@ -312,7 +312,7 @@ new Layer('ambiguous-global-dependency', {
   incompatibleNestedDependency
 })
 
-interface ConflictingLoggerFlow extends Flow {
+interface ConflictingLoggerBrick extends Brick {
   params: undefined
   result: undefined
   requires: { logger: { write(value: number): void } }
@@ -320,7 +320,7 @@ interface ConflictingLoggerFlow extends Flow {
 
 const conflictLayer = new Layer('conflict', {
   audit,
-  conflicting: flow<ConflictingLoggerFlow>(() => undefined)
+  conflicting: brick<ConflictingLoggerBrick>(() => undefined)
 })
 
 type ConflictRequirements = LayerRequirementsOf<typeof conflictLayer>

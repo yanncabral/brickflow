@@ -118,7 +118,7 @@ describe('signals', () => {
       durableName: 'files.editFile.approve',
       signalName: 'approve',
       layerPath: ['files'],
-      flowPath: ['editFile'],
+      brickPath: ['editFile'],
       callId: 'call-3',
       occurrence: 2
     })

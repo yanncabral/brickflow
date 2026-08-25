@@ -8,7 +8,7 @@ describe('ExecutionContext', () => {
     const names: string[] = []
     const context = new ExecutionContext({
       layerPath: ['files'],
-      flowPath: ['editFile'],
+      brickPath: ['editFile'],
       callId: 'call-1'
     })
     const signals = createSignalFunctions<{
@@ -19,7 +19,7 @@ describe('ExecutionContext', () => {
     })
     const childSignals = createSignalFunctions<{
       approve: { request: { id: string }; response: string }
-    }>(context.childFlow('validate', 'call-2'), async ({ name, request }) => {
+    }>(context.childBrick('validate', 'call-2'), async ({ name, request }) => {
       names.push(name)
       return (request as { id: string }).id
     })
@@ -35,7 +35,7 @@ describe('ExecutionContext', () => {
         () => new ExecutionContext({ layerPath: ['files', invalid], callId: 'call-layer' })
       ).toThrow(/invalid path segment/i)
       expect(
-        () => new ExecutionContext({ flowPath: ['editFile', invalid], callId: 'call-flow' })
+        () => new ExecutionContext({ brickPath: ['editFile', invalid], callId: 'call-brick' })
       ).toThrow(/invalid path segment/i)
     }
   })
@@ -43,13 +43,13 @@ describe('ExecutionContext', () => {
   test('rejects invalid child path segments', () => {
     const context = new ExecutionContext({
       layerPath: ['files'],
-      flowPath: ['editFile'],
+      brickPath: ['editFile'],
       callId: 'call-1'
     })
 
     for (const invalid of ['', 'nested.path']) {
       expect(() => context.childLayer(invalid)).toThrow(/invalid path segment/i)
-      expect(() => context.childFlow(invalid, 'call-2')).toThrow(/invalid path segment/i)
+      expect(() => context.childBrick(invalid, 'call-2')).toThrow(/invalid path segment/i)
     }
   })
 
@@ -57,15 +57,15 @@ describe('ExecutionContext', () => {
     const handlers = createSignalHandlerChain({ approve: () => 'ok' }, undefined, true)
     const root = new ExecutionContext({
       layerPath: ['files'],
-      flowPath: ['editFile'],
+      brickPath: ['editFile'],
       callId: 'call-1',
       providers: { logger: 'logger' },
       signalHandlers: handlers
     })
-    const child = root.childFlow('validate', 'call-2').childLayer('rules')
+    const child = root.childBrick('validate', 'call-2').childLayer('rules')
 
     expect(child.layerPath).toEqual(['files', 'rules'])
-    expect(child.flowPath).toEqual(['editFile', 'validate'])
+    expect(child.brickPath).toEqual(['editFile', 'validate'])
     expect(child.callId).toBe('call-2')
     expect(child.providers).toBe(root.providers)
     expect(child.signalHandlers).toBe(root.signalHandlers)

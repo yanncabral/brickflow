@@ -12,39 +12,39 @@
       },
     },
     "examples/basic": {
-      "name": "@flow-example/basic",
+      "name": "@brickflow-example/basic",
       "version": "0.0.0",
       "dependencies": {
-        "@flow/core": "workspace:*",
+        "@brickflow/core": "workspace:*",
       },
     },
     "examples/code-agent": {
-      "name": "@flow-example/code-agent",
+      "name": "@brickflow-example/code-agent",
       "version": "0.0.0",
       "dependencies": {
-        "@flow/core": "workspace:*",
+        "@brickflow/core": "workspace:*",
       },
     },
     "packages/core": {
-      "name": "@flow/core",
+      "name": "@brickflow/core",
       "version": "0.0.0",
       "dependencies": {
         "ts-pattern": "^5.8.0",
       },
     },
     "packages/engine-openworkflow": {
-      "name": "@flow/engine-openworkflow",
+      "name": "@brickflow/engine-openworkflow",
       "version": "0.0.0",
       "dependencies": {
-        "@flow/core": "workspace:*",
+        "@brickflow/core": "workspace:*",
         "openworkflow": "^0.9.2",
       },
     },
     "packages/testing": {
-      "name": "@flow/testing",
+      "name": "@brickflow/testing",
       "version": "0.0.0",
       "dependencies": {
-        "@flow/core": "workspace:*",
+        "@brickflow/core": "workspace:*",
       },
     },
   },
@@ -67,15 +67,15 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.4.12", "", { "os": "win32", "cpu": "x64" }, "sha512-yMckRzTyZ83hkk8iDFWswqSdU8tvZxspJKnYNh7JZr/zhZNOlzH13k4ecboU6MurKExCe2HUkH75pGI/O2JwGA=="],
 
-    "@flow-example/basic": ["@flow-example/basic@workspace:examples/basic"],
+    "@brickflow-example/basic": ["@brickflow-example/basic@workspace:examples/basic"],
 
-    "@flow-example/code-agent": ["@flow-example/code-agent@workspace:examples/code-agent"],
+    "@brickflow-example/code-agent": ["@brickflow-example/code-agent@workspace:examples/code-agent"],
 
-    "@flow/core": ["@flow/core@workspace:packages/core"],
+    "@brickflow/core": ["@brickflow/core@workspace:packages/core"],
 
-    "@flow/engine-openworkflow": ["@flow/engine-openworkflow@workspace:packages/engine-openworkflow"],
+    "@brickflow/engine-openworkflow": ["@brickflow/engine-openworkflow@workspace:packages/engine-openworkflow"],
 
-    "@flow/testing": ["@flow/testing@workspace:packages/testing"],
+    "@brickflow/testing": ["@brickflow/testing@workspace:packages/testing"],
 
     "@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 

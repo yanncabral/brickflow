@@ -4,7 +4,7 @@ import type { SignalCallMetadata, SignalHandlerChain } from '../signal/types'
 
 export interface ExecutionContextOptions {
   readonly layerPath?: readonly string[]
-  readonly flowPath?: readonly string[]
+  readonly brickPath?: readonly string[]
   readonly callId: string
   readonly providers?: Readonly<Record<string, unknown>>
   readonly signalHandlers?: SignalHandlerChain
@@ -12,7 +12,7 @@ export interface ExecutionContextOptions {
 
 export class ExecutionContext {
   readonly layerPath: readonly string[]
-  readonly flowPath: readonly string[]
+  readonly brickPath: readonly string[]
   readonly callId: string
   readonly providers: Readonly<Record<string, unknown>>
   readonly signalHandlers: SignalHandlerChain | undefined
@@ -20,11 +20,11 @@ export class ExecutionContext {
 
   constructor(options: ExecutionContextOptions) {
     const layerPath = [...(options.layerPath ?? [])]
-    const flowPath = [...(options.flowPath ?? [])]
+    const brickPath = [...(options.brickPath ?? [])]
     for (const segment of layerPath) assertValidPathSegment(segment)
-    for (const segment of flowPath) assertValidPathSegment(segment)
+    for (const segment of brickPath) assertValidPathSegment(segment)
     this.layerPath = Object.freeze(layerPath)
-    this.flowPath = Object.freeze(flowPath)
+    this.brickPath = Object.freeze(brickPath)
     this.callId = options.callId
     this.providers = options.providers ?? Object.freeze({})
     this.signalHandlers = options.signalHandlers
@@ -35,18 +35,18 @@ export class ExecutionContext {
     assertValidPathSegment(segment)
     return new ExecutionContext({
       layerPath: [...this.layerPath, segment],
-      flowPath: this.flowPath,
+      brickPath: this.brickPath,
       callId: this.callId,
       providers: this.providers,
       ...(this.signalHandlers ? { signalHandlers: this.signalHandlers } : {})
     })
   }
 
-  childFlow(segment: string, callId: string): ExecutionContext {
+  childBrick(segment: string, callId: string): ExecutionContext {
     assertValidPathSegment(segment)
     return new ExecutionContext({
       layerPath: this.layerPath,
-      flowPath: [...this.flowPath, segment],
+      brickPath: [...this.brickPath, segment],
       callId,
       providers: this.providers,
       ...(this.signalHandlers ? { signalHandlers: this.signalHandlers } : {})
@@ -56,7 +56,7 @@ export class ExecutionContext {
   withSignalHandlers(signalHandlers: SignalHandlerChain): ExecutionContext {
     return new ExecutionContext({
       layerPath: this.layerPath,
-      flowPath: this.flowPath,
+      brickPath: this.brickPath,
       callId: this.callId,
       providers: this.providers,
       signalHandlers
@@ -66,6 +66,6 @@ export class ExecutionContext {
   nextSignalMetadata(signalName: string): SignalCallMetadata {
     const occurrence = (this.#signalOccurrences.get(signalName) ?? 0) + 1
     this.#signalOccurrences.set(signalName, occurrence)
-    return signalCallMetadata(this.layerPath, this.flowPath, signalName, this.callId, occurrence)
+    return signalCallMetadata(this.layerPath, this.brickPath, signalName, this.callId, occurrence)
   }
 }

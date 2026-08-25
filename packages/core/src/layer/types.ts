@@ -1,19 +1,19 @@
-import type { Flow } from '../flow/contract'
+import type { Brick } from '../brick/contract'
 import type {
-  AnyFlowImplementation,
+  AnyBrickImplementation,
+  BrickImplementation,
+  BrickRunOptions,
   DependenciesOf,
   EffectiveErrorsOf,
   EffectiveRequirementsOf,
-  FlowImplementation,
-  FlowRunOptions,
   ParamsOf,
   RequirementsOf,
   ResultOf,
   SignalsOf
-} from '../flow/types'
+} from '../brick/types'
 import type { ValidatePathSegmentKeys, ValidPathSegment } from '../path-segment'
 import type { BoundarySignalHandlers, SignalDefinitions } from '../signal/types'
-import type { FlowRun } from '../worker/types'
+import type { BrickRun } from '../worker/types'
 
 export type Providers = Readonly<Record<string, unknown>>
 
@@ -25,8 +25,8 @@ export interface AnyLayer {
   override?(values: Readonly<Record<string, unknown>>): AnyLayer
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: heterogeneous Flow implementations are intentionally erased at Layer boundaries
-export type LayerEntry = FlowImplementation<any> | AnyLayer
+// biome-ignore lint/suspicious/noExplicitAny: heterogeneous Brick implementations are intentionally erased at Layer boundaries
+export type LayerEntry = BrickImplementation<any> | AnyLayer
 export type LayerEntries = Readonly<Record<string, LayerEntry>>
 
 export declare const requirementConflictBrand: unique symbol
@@ -38,7 +38,7 @@ export type RequirementConflict<Key extends PropertyKey, Left = unknown, Right =
 }
 
 type EntryRequirements<Entry> =
-  Entry extends FlowImplementation<infer Spec extends Flow>
+  Entry extends BrickImplementation<infer Spec extends Brick>
     ? RequirementsOf<Spec>
     : Entry extends { readonly entries: infer Entries extends LayerEntries }
       ? RequirementsFromEntries<Entries>
@@ -92,7 +92,7 @@ type EffectiveRequirementUnion<
   Entries extends LayerEntries,
   Depth extends readonly unknown[] = []
 > = {
-  [Key in keyof Entries]: Entries[Key] extends FlowImplementation<infer F extends Flow>
+  [Key in keyof Entries]: Entries[Key] extends BrickImplementation<infer F extends Brick>
     ? EffectiveRequirementsOf<F>
     : Entries[Key] extends { readonly entries: infer Nested extends LayerEntries }
       ? Depth['length'] extends 16
@@ -108,14 +108,14 @@ type EffectiveRequirementsFromEntries<Entries extends LayerEntries> = {
   >
 }
 
-type FlowOfEntry<Entry> = Entry extends FlowImplementation<infer F extends Flow> ? F : never
+type BrickOfEntry<Entry> = Entry extends BrickImplementation<infer F extends Brick> ? F : never
 
-type FlattenedFlowEntryForAlias<
+type FlattenedBrickEntryForAlias<
   Entries extends LayerEntries,
   Alias extends PropertyKey,
   Path extends readonly PropertyKey[] = readonly []
 > = {
-  [Key in keyof Entries]: Entries[Key] extends FlowImplementation<infer _F extends Flow>
+  [Key in keyof Entries]: Entries[Key] extends BrickImplementation<infer _F extends Brick>
     ? Key extends Alias
       ? {
           readonly path: readonly [...Path, Key]
@@ -127,7 +127,7 @@ type FlattenedFlowEntryForAlias<
           readonly id: infer Id extends PropertyKey
           readonly entries: infer Nested extends LayerEntries
         }
-      ? FlattenedFlowEntryForAlias<Nested, Alias, readonly [...Path, Id]>
+      ? FlattenedBrickEntryForAlias<Nested, Alias, readonly [...Path, Id]>
       : never
 }[keyof Entries]
 
@@ -137,17 +137,17 @@ type IsUnion<Value, Whole = Value> = Value extends Value
     : true
   : never
 
-type UniqueGlobalFlowEntryForAlias<
+type UniqueGlobalBrickEntryForAlias<
   RootEntries extends LayerEntries,
   Alias extends PropertyKey,
-  Match = FlattenedFlowEntryForAlias<RootEntries, Alias>
+  Match = FlattenedBrickEntryForAlias<RootEntries, Alias>
 > = [Match] extends [never] ? never : true extends IsUnion<Match> ? never : Match
 
-type ScopedFlowEntryForAlias<
+type ScopedBrickEntryForAlias<
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
   Alias extends PropertyKey,
-  Match = FlattenedFlowEntryForAlias<RootEntries, Alias>
+  Match = FlattenedBrickEntryForAlias<RootEntries, Alias>
 > = Match extends { readonly scope: infer CandidateScope extends LayerEntries }
   ? [CandidateScope] extends [ScopeEntries]
     ? [ScopeEntries] extends [CandidateScope]
@@ -156,20 +156,20 @@ type ScopedFlowEntryForAlias<
     : never
   : never
 
-type ResolvedFlowEntry<
+type ResolvedBrickEntry<
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
   Alias extends PropertyKey,
-  Direct = ScopedFlowEntryForAlias<RootEntries, ScopeEntries, Alias>
-> = [Direct] extends [never] ? UniqueGlobalFlowEntryForAlias<RootEntries, Alias> : Direct
+  Direct = ScopedBrickEntryForAlias<RootEntries, ScopeEntries, Alias>
+> = [Direct] extends [never] ? UniqueGlobalBrickEntryForAlias<RootEntries, Alias> : Direct
 
-type ResolvedFlowEntryForSignals<
+type ResolvedBrickEntryForSignals<
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
   Alias extends PropertyKey
-> = ResolvedFlowEntry<RootEntries, ScopeEntries, Alias>
+> = ResolvedBrickEntry<RootEntries, ScopeEntries, Alias>
 
-type OwnSignalHandlers<F extends Flow> =
+type OwnSignalHandlers<F extends Brick> =
   SignalsOf<F> extends SignalDefinitions
     ? keyof SignalsOf<F> extends never
       ? Record<never, never>
@@ -195,23 +195,23 @@ type ResolvedSignalHandlers<
   Depth extends readonly unknown[] = []
 > = Resolved extends {
   readonly path: infer Path extends readonly PropertyKey[]
-  readonly implementation: FlowImplementation<infer ResolvedFlow extends Flow>
+  readonly implementation: BrickImplementation<infer ResolvedBrick extends Brick>
   readonly scope: infer ResolvedScope extends LayerEntries
 }
-  ? NamespacedSignalHandlers<Path, OwnSignalHandlers<ResolvedFlow>> &
-      OwnSelectedSignalHandlers<RootEntries, ResolvedScope, ResolvedFlow, Depth>
+  ? NamespacedSignalHandlers<Path, OwnSignalHandlers<ResolvedBrick>> &
+      OwnSelectedSignalHandlers<RootEntries, ResolvedScope, ResolvedBrick, Depth>
   : Resolved extends {
-        readonly implementation: FlowImplementation<infer ResolvedFlow extends Flow>
+        readonly implementation: BrickImplementation<infer ResolvedBrick extends Brick>
         readonly scope: infer ResolvedScope extends LayerEntries
       }
-    ? NamespacedSignalHandlers<readonly [Alias], OwnSignalHandlers<ResolvedFlow>> &
-        OwnSelectedSignalHandlers<RootEntries, ResolvedScope, ResolvedFlow, Depth>
+    ? NamespacedSignalHandlers<readonly [Alias], OwnSignalHandlers<ResolvedBrick>> &
+        OwnSelectedSignalHandlers<RootEntries, ResolvedScope, ResolvedBrick, Depth>
     : Record<never, never>
 
 type OwnSelectedSignalHandlers<
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
-  F extends Flow,
+  F extends Brick,
   Depth extends readonly unknown[] = []
 > = Depth['length'] extends 16
   ? keyof DependenciesOf<F> extends never
@@ -219,7 +219,7 @@ type OwnSelectedSignalHandlers<
     : never
   : UnionToIntersection<
       {
-        readonly [Alias in keyof DependenciesOf<F>]: ResolvedFlowEntryForSignals<
+        readonly [Alias in keyof DependenciesOf<F>]: ResolvedBrickEntryForSignals<
           RootEntries,
           ScopeEntries,
           Alias
@@ -232,16 +232,16 @@ type OwnSelectedSignalHandlers<
 type HasIncompatibleDependencyAlias<
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
-  F extends Flow
+  F extends Brick
 > = true extends {
   readonly [Alias in keyof DependenciesOf<F>]: [
-    ResolvedFlowEntry<RootEntries, ScopeEntries, Alias>
+    ResolvedBrickEntry<RootEntries, ScopeEntries, Alias>
   ] extends [never]
     ? false
-    : ResolvedFlowEntry<RootEntries, ScopeEntries, Alias> extends {
+    : ResolvedBrickEntry<RootEntries, ScopeEntries, Alias> extends {
           readonly implementation: infer Implementation
         }
-      ? FlowOfEntry<Implementation> extends DependenciesOf<F>[Alias]
+      ? BrickOfEntry<Implementation> extends DependenciesOf<F>[Alias]
         ? false
         : true
       : false
@@ -253,7 +253,7 @@ type ValidateDependencyAliases<
   RootEntries extends LayerEntries,
   Entries extends LayerEntries = RootEntries
 > = {
-  readonly [Key in keyof Entries]: Entries[Key] extends FlowImplementation<infer F extends Flow>
+  readonly [Key in keyof Entries]: Entries[Key] extends BrickImplementation<infer F extends Brick>
     ? HasIncompatibleDependencyAlias<RootEntries, Entries, F> extends true
       ? never
       : Entries[Key]
@@ -297,15 +297,15 @@ type OverrideValues<Entries extends LayerEntries, Provided extends Providers> = 
   >
 >
 
-type DependencyFlow<Value> = Value extends Flow ? Value : never
+type DependencyBrick<Value> = Value extends Brick ? Value : never
 
 type SuppliedDependencyNode<
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
-  F extends Flow,
+  F extends Brick,
   Depth extends readonly unknown[]
 > = {
-  readonly flow: FlowImplementation<F>
+  readonly brick: BrickImplementation<F>
 } & (keyof ScopedUnresolvedDependencies<RootEntries, ScopeEntries, F, Depth> extends never
   ? { readonly dependencies?: never }
   : {
@@ -315,14 +315,14 @@ type SuppliedDependencyNode<
 type UnresolvedDirectDependency<
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
-  F extends Flow,
+  F extends Brick,
   Alias extends keyof DependenciesOf<F>,
   Depth extends readonly unknown[]
 > = {
   readonly [Key in Alias]: SuppliedDependencyNode<
     RootEntries,
     ScopeEntries,
-    DependencyFlow<DependenciesOf<F>[Alias]>,
+    DependencyBrick<DependenciesOf<F>[Alias]>,
     [...Depth, unknown]
   >
 }
@@ -330,21 +330,21 @@ type UnresolvedDirectDependency<
 type UnresolvedDependencyBranch<
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
-  F extends Flow,
+  F extends Brick,
   Alias extends keyof DependenciesOf<F>,
   Depth extends readonly unknown[]
 > =
-  ResolvedFlowEntry<RootEntries, ScopeEntries, Alias> extends infer Resolved
+  ResolvedBrickEntry<RootEntries, ScopeEntries, Alias> extends infer Resolved
     ? [Resolved] extends [never]
       ? UnresolvedDirectDependency<RootEntries, ScopeEntries, F, Alias, Depth>
       : Resolved extends {
-            readonly implementation: FlowImplementation<infer ResolvedFlow extends Flow>
+            readonly implementation: BrickImplementation<infer ResolvedBrick extends Brick>
             readonly scope: infer ResolvedScope extends LayerEntries
           }
         ? ScopedUnresolvedDependencies<
             RootEntries,
             ResolvedScope,
-            ResolvedFlow,
+            ResolvedBrick,
             [...Depth, unknown]
           > extends infer Children
           ? keyof Children extends never
@@ -359,12 +359,12 @@ type UnresolvedDependencyBranch<
 type ScopedUnresolvedDependencies<
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
-  F extends Flow,
+  F extends Brick,
   Depth extends readonly unknown[] = []
 > = Depth['length'] extends 16
   ? {
       readonly [Alias in keyof DependenciesOf<F>]: {
-        readonly flow: AnyFlowImplementation
+        readonly brick: AnyBrickImplementation
         readonly dependencies: Readonly<Record<string, unknown>>
       }
     }
@@ -383,11 +383,11 @@ type ScopedUnresolvedDependencies<
 type UnresolvedDependencies<
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
-  F extends Flow
+  F extends Brick
 > = ScopedUnresolvedDependencies<RootEntries, ScopeEntries, F>
 
 type SuppliedNodeSignalHandlers<Node> = Node extends {
-  readonly flow: FlowImplementation<infer F extends Flow>
+  readonly brick: BrickImplementation<infer F extends Brick>
   readonly dependencies?: infer Dependencies
 }
   ? OwnSignalHandlers<F> & SuppliedDependencySignalHandlers<Dependencies>
@@ -398,18 +398,18 @@ type SuppliedNodeSignalHandlers<Node> = Node extends {
 type LayerSignalHandlersForDependencies<
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
-  F extends Flow,
+  F extends Brick,
   Deps
 > = UnionToIntersection<
   {
     readonly [Alias in keyof DependenciesOf<F>]: Alias extends keyof Deps
       ? Deps[Alias] extends {
-          readonly flow: FlowImplementation<infer SuppliedFlow extends Flow>
+          readonly brick: BrickImplementation<infer SuppliedBrick extends Brick>
         }
         ? LayerSignalHandlersForDependencies<
             RootEntries,
             ScopeEntries,
-            SuppliedFlow,
+            SuppliedBrick,
             Deps[Alias] extends { readonly dependencies: infer SuppliedDependencies }
               ? SuppliedDependencies
               : Record<never, never>
@@ -417,12 +417,12 @@ type LayerSignalHandlersForDependencies<
         : ResolvedSignalHandlers<
             RootEntries,
             Alias,
-            ResolvedFlowEntry<RootEntries, ScopeEntries, Alias>
+            ResolvedBrickEntry<RootEntries, ScopeEntries, Alias>
           >
       : ResolvedSignalHandlers<
             RootEntries,
             Alias,
-            ResolvedFlowEntry<RootEntries, ScopeEntries, Alias>
+            ResolvedBrickEntry<RootEntries, ScopeEntries, Alias>
           > extends infer Handlers
         ? Handlers
         : Record<never, never>
@@ -437,14 +437,14 @@ type SuppliedDependencySignalHandlers<Deps> = string extends keyof Deps
         : Alias]: SuppliedNodeSignalHandlers<Deps[Alias]>
     }
 
-type BoundFlowRunOptions<
-  F extends Flow,
+type BoundBrickRunOptions<
+  F extends Brick,
   RootId extends string,
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
   Provided extends Providers,
-  FlowPath extends readonly PropertyKey[]
-> = Omit<FlowRunOptions<F>, 'requirements' | 'dependencies' | 'signals'> &
+  BrickPath extends readonly PropertyKey[]
+> = Omit<BrickRunOptions<F>, 'requirements' | 'dependencies' | 'signals'> &
   (keyof Omit<EffectiveRequirementsOf<F>, keyof Provided> extends never
     ? { readonly requirements?: never }
     : { readonly requirements: Omit<EffectiveRequirementsOf<F>, keyof Provided> }) &
@@ -463,7 +463,7 @@ type BoundFlowRunOptions<
     >) extends never
     ? { readonly signals?: never }
     : {
-        readonly signals: NamespacedSignalHandlers<FlowPath, OwnSignalHandlers<F>> &
+        readonly signals: NamespacedSignalHandlers<BrickPath, OwnSignalHandlers<F>> &
           NamespacedSignalHandlers<
             readonly [RootId],
             LayerSignalHandlersForDependencies<
@@ -476,13 +476,13 @@ type BoundFlowRunOptions<
           SuppliedDependencySignalHandlers<UnresolvedDependencies<RootEntries, ScopeEntries, F>>
       })
 
-type BoundFlowRunOptionArgs<
-  F extends Flow,
+type BoundBrickRunOptionArgs<
+  F extends Brick,
   RootId extends string,
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
   Provided extends Providers,
-  FlowPath extends readonly PropertyKey[]
+  BrickPath extends readonly PropertyKey[]
 > = keyof Omit<EffectiveRequirementsOf<F>, keyof Provided> extends never
   ? keyof UnresolvedDependencies<RootEntries, ScopeEntries, F> extends never
     ? keyof (OwnSignalHandlers<F> &
@@ -496,31 +496,31 @@ type BoundFlowRunOptionArgs<
           UnresolvedDependencies<RootEntries, ScopeEntries, F>
         >) extends never
       ? readonly [
-          options?: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided, FlowPath>
+          options?: BoundBrickRunOptions<F, RootId, RootEntries, ScopeEntries, Provided, BrickPath>
         ]
       : readonly [
-          options: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided, FlowPath>
+          options: BoundBrickRunOptions<F, RootId, RootEntries, ScopeEntries, Provided, BrickPath>
         ]
     : readonly [
-        options: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided, FlowPath>
+        options: BoundBrickRunOptions<F, RootId, RootEntries, ScopeEntries, Provided, BrickPath>
       ]
   : readonly [
-      options: BoundFlowRunOptions<F, RootId, RootEntries, ScopeEntries, Provided, FlowPath>
+      options: BoundBrickRunOptions<F, RootId, RootEntries, ScopeEntries, Provided, BrickPath>
     ]
 
-export type BoundFlow<
-  F extends Flow,
+export type BoundBrick<
+  F extends Brick,
   RootId extends string,
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
   Provided extends Providers,
-  FlowPath extends readonly PropertyKey[]
+  BrickPath extends readonly PropertyKey[]
 > = {
-  readonly handler: FlowImplementation<F>['handler']
+  readonly handler: BrickImplementation<F>['handler']
   run(
     params: ParamsOf<F>,
-    ...options: BoundFlowRunOptionArgs<F, RootId, RootEntries, ScopeEntries, Provided, FlowPath>
-  ): FlowRun<EffectiveErrorsOf<F>, ResultOf<F>>
+    ...options: BoundBrickRunOptionArgs<F, RootId, RootEntries, ScopeEntries, Provided, BrickPath>
+  ): BrickRun<EffectiveErrorsOf<F>, ResultOf<F>>
 }
 
 type BoundEntries<
@@ -530,8 +530,8 @@ type BoundEntries<
   EffectiveProvided extends Providers,
   LayerPath extends readonly PropertyKey[]
 > = {
-  readonly [Key in keyof Entries]: Entries[Key] extends FlowImplementation<infer F extends Flow>
-    ? BoundFlow<F, RootId, RootEntries, Entries, EffectiveProvided, readonly [...LayerPath, Key]>
+  readonly [Key in keyof Entries]: Entries[Key] extends BrickImplementation<infer F extends Brick>
+    ? BoundBrick<F, RootId, RootEntries, Entries, EffectiveProvided, readonly [...LayerPath, Key]>
     : Entries[Key] extends Layer<infer Id, infer Nested, infer NestedProvided>
       ? BoundLayer<
           Id,
@@ -619,6 +619,6 @@ export interface FlattenedLayerEntry {
   readonly id: string
   readonly key: string
   readonly layerPath: readonly string[]
-  // biome-ignore lint/suspicious/noExplicitAny: flattened entries retain heterogeneous Flow implementations
-  readonly implementation: FlowImplementation<any>
+  // biome-ignore lint/suspicious/noExplicitAny: flattened entries retain heterogeneous Brick implementations
+  readonly implementation: BrickImplementation<any>
 }

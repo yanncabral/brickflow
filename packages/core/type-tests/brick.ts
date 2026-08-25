@@ -1,13 +1,13 @@
-import { executeFlowImplementation } from '../src/flow/implementation'
+import { executeBrickImplementation } from '../src/brick/implementation'
 // @ts-expect-error obsolete Spec aliases are not part of the public API
 import type { SpecOf } from '../src/index'
 import * as publicApi from '../src/index'
-import { type Flow, type FlowHandler, type FlowImplementation, flow } from '../src/index'
+import { type Brick, type BrickHandler, type BrickImplementation, brick } from '../src/index'
 
 // @ts-expect-error raw execution helpers are internal, not part of the public barrel
-void publicApi.executeFlowImplementation
+void publicApi.executeBrickImplementation
 // @ts-expect-error implementation guards are internal, not part of the public barrel
-void publicApi.isFlowImplementation
+void publicApi.isBrickImplementation
 // @ts-expect-error Layer flattening is internal, not part of the public barrel
 void publicApi.flattenLayer
 // @ts-expect-error Layer lookup is internal, not part of the public barrel
@@ -16,7 +16,7 @@ void publicApi.lookupLayer
 type _ObsoleteSpecOf = SpecOf<unknown>
 void (undefined as _ObsoleteSpecOf)
 
-interface GetUserFlow extends Flow {
+interface GetUserBrick extends Brick {
   params: { id: string }
   result: { id: string }
   errors: 'user-not-found' | { type: 'unavailable'; retryAfter: number }
@@ -24,33 +24,33 @@ interface GetUserFlow extends Flow {
   signals: { refresh: { request: { force: boolean }; response: 'refreshed' } }
 }
 
-interface GetProfileFlow extends Flow {
+interface GetProfileBrick extends Brick {
   params: { userId: string }
   result: { userId: string }
   errors: 'profile-not-found'
   requires: { profiles: { has(userId: string): boolean } }
-  depends: { getUser: GetUserFlow }
+  depends: { getUser: GetUserBrick }
 }
 
-interface EmptyDependencyAliasFlow extends Flow {
+interface EmptyDependencyAliasBrick extends Brick {
   params: undefined
   result: undefined
-  depends: { '': QuietFlow }
+  depends: { '': QuietBrick }
 }
 
-interface DottedDependencyAliasFlow extends Flow {
+interface DottedDependencyAliasBrick extends Brick {
   params: undefined
   result: undefined
-  depends: { 'quiet.child': QuietFlow }
+  depends: { 'quiet.child': QuietBrick }
 }
 
-interface EmptySignalNameFlow extends Flow {
+interface EmptySignalNameBrick extends Brick {
   params: undefined
   result: undefined
   signals: { '': { request: undefined; response: string } }
 }
 
-interface DottedSignalNameFlow extends Flow {
+interface DottedSignalNameBrick extends Brick {
   params: undefined
   result: undefined
   signals: { 'quiet.signal': { request: undefined; response: string } }
@@ -59,36 +59,36 @@ interface DottedSignalNameFlow extends Flow {
 declare const symbolDependencyAlias: unique symbol
 declare const symbolSignalName: unique symbol
 
-interface SymbolDependencyAliasFlow extends Flow {
+interface SymbolDependencyAliasBrick extends Brick {
   params: undefined
   result: undefined
-  depends: { [symbolDependencyAlias]: QuietFlow }
+  depends: { [symbolDependencyAlias]: QuietBrick }
 }
 
-interface NumericDependencyAliasFlow extends Flow {
+interface NumericDependencyAliasBrick extends Brick {
   params: undefined
   result: undefined
-  depends: { 0: QuietFlow }
+  depends: { 0: QuietBrick }
 }
 
-interface SymbolSignalNameFlow extends Flow {
+interface SymbolSignalNameBrick extends Brick {
   params: undefined
   result: undefined
   signals: { [symbolSignalName]: { request: undefined; response: string } }
 }
 
-interface NumericSignalNameFlow extends Flow {
+interface NumericSignalNameBrick extends Brick {
   params: undefined
   result: undefined
   signals: { 0: { request: undefined; response: string } }
 }
 
-interface QuietFlow extends Flow {
+interface QuietBrick extends Brick {
   params: undefined
   result: number
 }
 
-const getUser = flow<GetUserFlow>(async ({ id }, { users }, dependencies, { fail, signals }) => {
+const getUser = brick<GetUserBrick>(async ({ id }, { users }, dependencies, { fail, signals }) => {
   const user = await users.find(id)
   dependencies satisfies Record<never, never>
   signals satisfies { refresh: (request: { force: boolean }) => Promise<'refreshed'> }
@@ -97,52 +97,52 @@ const getUser = flow<GetUserFlow>(async ({ id }, { users }, dependencies, { fail
   return user ?? fail('user-not-found')
 })
 
-flow<GetProfileFlow>(async ({ userId }, { profiles }, { getUser }, { fail }) => {
+brick<GetProfileBrick>(async ({ userId }, { profiles }, { getUser }, { fail }) => {
   const user = await getUser({ id: userId })
   return profiles.has(user.id) ? { userId: user.id } : fail('profile-not-found')
 })
 
 // @ts-expect-error dependency aliases must not be empty
-flow<EmptyDependencyAliasFlow>(() => undefined)
+brick<EmptyDependencyAliasBrick>(() => undefined)
 // @ts-expect-error dependency aliases must not contain dots
-flow<DottedDependencyAliasFlow>(() => undefined)
+brick<DottedDependencyAliasBrick>(() => undefined)
 // @ts-expect-error signal names must not be empty
-flow<EmptySignalNameFlow>(() => undefined)
+brick<EmptySignalNameBrick>(() => undefined)
 // @ts-expect-error signal names must not contain dots
-flow<DottedSignalNameFlow>(() => undefined)
+brick<DottedSignalNameBrick>(() => undefined)
 
 // @ts-expect-error dependency aliases must be string keys
-flow<SymbolDependencyAliasFlow>(() => undefined)
+brick<SymbolDependencyAliasBrick>(() => undefined)
 // @ts-expect-error numeric dependency aliases must be rejected instead of stringified
-flow<NumericDependencyAliasFlow>(() => undefined)
+brick<NumericDependencyAliasBrick>(() => undefined)
 // @ts-expect-error signal names must be string keys
-flow<SymbolSignalNameFlow>(() => undefined)
+brick<SymbolSignalNameBrick>(() => undefined)
 // @ts-expect-error numeric signal names must be rejected instead of stringified
-flow<NumericSignalNameFlow>(() => undefined)
+brick<NumericSignalNameBrick>(() => undefined)
 
-const quiet = flow<QuietFlow>(() => 1)
-quiet satisfies FlowImplementation<QuietFlow>
+const quiet = brick<QuietBrick>(() => 1)
+quiet satisfies BrickImplementation<QuietBrick>
 
-const alternateGetUser = flow<GetUserFlow>(async ({ id }) => ({ id }))
-alternateGetUser satisfies FlowImplementation<GetUserFlow>
+const alternateGetUser = brick<GetUserBrick>(async ({ id }) => ({ id }))
+alternateGetUser satisfies BrickImplementation<GetUserBrick>
 
-flow<GetUserFlow>(async (_params, _requirements, _dependencies, { fail }) => {
-  // @ts-expect-error fail accepts only errors declared by this Flow
+brick<GetUserBrick>(async (_params, _requirements, _dependencies, { fail }) => {
+  // @ts-expect-error fail accepts only errors declared by this Brick
   return fail('profile-not-found')
 })
 
-flow<GetUserFlow>(
-  // @ts-expect-error params must match the Flow interface
+brick<GetUserBrick>(
+  // @ts-expect-error params must match the Brick interface
   async ({ missing }) => ({ id: missing })
 )
 
-flow<GetUserFlow>(
-  // @ts-expect-error handler result must match the Flow interface
+brick<GetUserBrick>(
+  // @ts-expect-error handler result must match the Brick interface
   async ({ id }) => ({ userId: id })
 )
 
-// @ts-expect-error signals are required for a Flow that declares them
-void executeFlowImplementation(
+// @ts-expect-error signals are required for a Brick that declares them
+void executeBrickImplementation(
   getUser,
   { id: 'u1' },
   {
@@ -155,7 +155,7 @@ void executeFlowImplementation(
   {}
 )
 
-void executeFlowImplementation(
+void executeBrickImplementation(
   getUser,
   { id: 'u1' },
   {
@@ -169,6 +169,6 @@ void executeFlowImplementation(
   { refresh: async () => 'refreshed' }
 )
 
-const handler: FlowHandler<GetUserFlow> = async ({ id }) => ({ id })
+const handler: BrickHandler<GetUserBrick> = async ({ id }) => ({ id })
 void handler
 void quiet

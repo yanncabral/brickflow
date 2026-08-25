@@ -60,18 +60,18 @@ export function durableSignalName(path: readonly string[], signalName: string): 
 
 export function signalCallMetadata(
   layerPath: readonly string[],
-  flowPath: readonly string[],
+  brickPath: readonly string[],
   signalName: string,
   callId: string,
   occurrence: number
 ): SignalCallMetadata {
   const stableLayerPath = Object.freeze([...layerPath])
-  const stableFlowPath = Object.freeze([...flowPath])
+  const stableBrickPath = Object.freeze([...brickPath])
   return Object.freeze({
-    durableName: durableSignalName([...stableLayerPath, ...stableFlowPath], signalName),
+    durableName: durableSignalName([...stableLayerPath, ...stableBrickPath], signalName),
     signalName,
     layerPath: stableLayerPath,
-    flowPath: stableFlowPath,
+    brickPath: stableBrickPath,
     callId,
     occurrence
   })

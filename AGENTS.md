@@ -2,7 +2,7 @@ You are an experienced, pragmatic software engineering AI agent. Do not over-eng
 
 # Project Overview
 
-Flow is an experimental TypeScript library for typed domain failures, structural dependency injection, composable Layers, Signals, and engine-neutral execution. Core currently implements local execution through the Worker contract. Durable adapters are planned, with OpenWorkflow targeted first, while core must remain independent enough for future Temporal or Inngest adapters.
+Brick is an experimental TypeScript library for typed domain failures, structural dependency injection, composable Layers, Signals, and engine-neutral execution. Core currently implements local execution through the Worker contract. Durable adapters are planned, with OpenWorkflow targeted first, while core must remain independent enough for future Temporal or Inngest adapters.
 
 Technology: TypeScript, Bun workspaces, Bun test, Biome, Husky, and ts-pattern. The repository is ESM-only.
 
@@ -12,7 +12,7 @@ Read `docs/architecture/agent-context.md` before changing public API, graph reso
 
 # Reference
 
-- `packages/core/`: Flow, Layer, Worker contract, default local Worker, Signal, failure, and engine-neutral interfaces. It must not import a durable adapter.
+- `packages/core/`: Brick, Layer, Worker contract, default local Worker, Signal, failure, and engine-neutral interfaces. It must not import a durable adapter.
 - `packages/engine-openworkflow/`: placeholder for the planned OpenWorkflow durable adapter; no Worker or serialization implementation exists yet.
 - `packages/testing/`: placeholder; current core runtime tests and all type-tests live under `packages/core/`.
 - `examples/basic/`: executable API usage.
@@ -40,10 +40,10 @@ bun run clean        # remove generated output
 
 - Develop behavior test-first. Run the focused runtime test or type-test and observe failure before implementation.
 - Keep public types in focused files; avoid one large barrel containing implementation logic.
-- A Flow interface is type-only; `flow<F>(handler)` creates a frozen executable implementation without tokens or requirement metadata.
-- Direct runs supply dependencies as explicit recursive `{ flow, dependencies? }` nodes; `dependencies` is required when the selected Flow still has unresolved children. Layer-bound runs supply only unresolved branches, so a Layer-resolved node may be `{ dependencies: ... }` without `flow`. Bare Flow values are invalid.
+- A Brick interface is type-only; `brick<F>(handler)` creates a frozen executable implementation without tokens or requirement metadata.
+- Direct runs supply dependencies as explicit recursive `{ brick, dependencies? }` nodes; `dependencies` is required when the selected Brick still has unresolved children. Layer-bound runs supply only unresolved branches, so a Layer-resolved node may be `{ dependencies: ... }` without `brick`. Bare Brick values are invalid.
 - Layer-bound aliases resolve caller-local first, then unique-global, then supplied fallback for missing or ambiguous aliases.
-- Signals mirror the selected dependency graph. Direct-run root signals are top-level; Layer-bound own signals use the full durable Flow path. Supplied dependency signals use recursive alias paths; Layer-resolved signals use durable Layer paths.
+- Signals mirror the selected dependency graph. Direct-run root signals are top-level; Layer-bound own signals use the full durable Brick path. Supplied dependency signals use recursive alias paths; Layer-resolved signals use durable Layer paths.
 - `.provide()` adds absent effective requirements. `.override()` replaces existing effective providers. Both are immutable.
 - Path segments are non-empty strings without `.`. Symbols and numeric graph keys are invalid.
 - Core owns the Worker contract and default local Worker. Future durable adapters must implement core interfaces; core must never branch on an adapter name.
@@ -51,7 +51,7 @@ bun run clean        # remove generated output
 
 # Anti-patterns
 
-- Do not use generators or EffectTS APIs in the public Flow API.
+- Do not use generators or EffectTS APIs in the public Brick API.
 - Do not collapse typed failures into untyped `Error` values across durable boundaries.
 - Do not hide non-deterministic durable side effects without a documented checkpoint strategy.
 - Do not add service-token boilerplate unless a reviewed design explicitly requires it.
@@ -63,4 +63,4 @@ Biome is the only formatter, linter, and import organizer. Use strict TypeScript
 
 # Commit and Pull Request Guidelines
 
-Use conventional commits such as `feat: add flow contract types` or `test: cover signal propagation`. Before committing, run `bun run typecheck`, `bun test`, `bun run lint`, and `git diff --check`. Do not open a pull request unless explicitly requested. PR descriptions must summarize behavior, list validation commands, and call out any durable replay or compatibility implications.
+Use conventional commits such as `feat: add brick contract types` or `test: cover signal propagation`. Before committing, run `bun run typecheck`, `bun test`, `bun run lint`, and `git diff --check`. Do not open a pull request unless explicitly requested. PR descriptions must summarize behavior, list validation commands, and call out any durable replay or compatibility implications.

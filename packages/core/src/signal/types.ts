@@ -51,7 +51,7 @@ export interface SignalCallMetadata {
   readonly durableName: string
   readonly signalName: string
   readonly layerPath: readonly string[]
-  readonly flowPath: readonly string[]
+  readonly brickPath: readonly string[]
   readonly callId: string
   readonly occurrence: number
 }
