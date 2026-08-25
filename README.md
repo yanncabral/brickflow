@@ -1,6 +1,6 @@
 # Flow
 
-Experimental TypeScript library for typed domain failures, structural dependency injection, composable Layers, Signals, and engine-neutral local or durable Flow execution.
+Experimental TypeScript library for typed domain failures, structural dependency injection, composable Layers, Signals, and engine-neutral execution. Core includes a default in-process Worker; durable adapters are planned.
 
 ## Interface-first Flows
 
@@ -31,9 +31,11 @@ const user = await users.getUser
 
 `errors`, `requires`, `depends`, and `signals` may be omitted when empty. Multiple `flow<GetUserFlow>(...)` values can implement the same interface.
 
-Dependencies bind structurally by their declared alias and the matching public Layer entry key. A dependency named `getUser` resolves a `getUser` entry in the caller's Layer scope, falling back to a unique matching entry in nested scopes. Renaming that public entry changes runtime binding and durable identity.
+Flows can run directly by supplying `requirements`, recursive `{ flow, dependencies? }` dependency nodes, and signal handlers to `.run(...)`; Layers pre-bind reusable providers and resolve matching dependency aliases.
 
-Provider requirements remain statically checked through Layer composition. This interface-only variant has no runtime provider-key metadata: handlers receive the full effective provider environment, and missing provider keys are not prevalidated at runtime. A future code-generation strategy may restore dynamic validation without adding tokens or duplicated metadata.
+Dependencies bind structurally by declared alias and Flow entry key. Layer-bound resolution checks the caller's Layer scope first, then a unique matching Flow entry anywhere in the configured Layer tree. Missing or globally ambiguous aliases must be supplied through recursive dependency configuration at the run boundary. Renaming a Flow entry changes runtime binding and its durable ID.
+
+Provider requirements remain statically checked through Layer composition. Flow implementations carry no runtime provider-key metadata, so handlers receive the full effective provider environment and missing keys are not prevalidated at runtime.
 
 ## Commands
 
@@ -50,9 +52,11 @@ bun run clean
 ## Workspace packages
 
 - `@flow/core`: engine-neutral contracts, direct execution, Layers, and the default in-process Worker.
-- `@flow/engine-openworkflow`: OpenWorkflow durable Worker adapter.
-- `@flow/testing`: test utilities and compile-time fixtures.
-- `examples/basic`: minimal API usage.
-- `examples/code-agent`: durable coding-agent scenario.
+- `@flow/engine-openworkflow`: placeholder for the planned OpenWorkflow adapter.
+- `@flow/testing`: placeholder for future testing utilities.
+- `examples/basic`: executable minimal API usage.
+- `examples/code-agent`: placeholder for a future durable coding-agent scenario.
 
-See `docs/superpowers/specs/` for versioned designs and `docs/superpowers/plans/` for implementation plans.
+Current architecture: `docs/architecture/agent-context.md`.
+
+Design history: `docs/superpowers/specs/`. Implementation plans: `docs/superpowers/plans/`.
