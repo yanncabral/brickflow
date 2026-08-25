@@ -37,6 +37,8 @@ interface UseCase extends Flow {
 const useCase = flow<UseCase>(handler)
 ```
 
+Omit `errors`, `requires`, `depends`, or `signals` when empty; when declared, the property itself is required.
+
 Rules:
 
 - Interface is type-only.
