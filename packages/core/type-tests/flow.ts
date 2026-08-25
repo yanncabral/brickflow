@@ -32,6 +32,30 @@ interface GetProfileFlow extends Flow {
   depends: { getUser: GetUserFlow }
 }
 
+interface EmptyDependencyAliasFlow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { '': QuietFlow }
+}
+
+interface DottedDependencyAliasFlow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { 'quiet.child': QuietFlow }
+}
+
+interface EmptySignalNameFlow extends Flow {
+  params: undefined
+  result: undefined
+  signals: { '': { request: undefined; response: string } }
+}
+
+interface DottedSignalNameFlow extends Flow {
+  params: undefined
+  result: undefined
+  signals: { 'quiet.signal': { request: undefined; response: string } }
+}
+
 interface QuietFlow extends Flow {
   params: undefined
   result: number
@@ -50,6 +74,15 @@ flow<GetProfileFlow>(async ({ userId }, { profiles }, { getUser }, { fail }) => 
   const user = await getUser({ id: userId })
   return profiles.has(user.id) ? { userId: user.id } : fail('profile-not-found')
 })
+
+// @ts-expect-error dependency aliases must not be empty
+flow<EmptyDependencyAliasFlow>(() => undefined)
+// @ts-expect-error dependency aliases must not contain dots
+flow<DottedDependencyAliasFlow>(() => undefined)
+// @ts-expect-error signal names must not be empty
+flow<EmptySignalNameFlow>(() => undefined)
+// @ts-expect-error signal names must not contain dots
+flow<DottedSignalNameFlow>(() => undefined)
 
 const quiet = flow<QuietFlow>(() => 1)
 quiet satisfies FlowImplementation<QuietFlow>

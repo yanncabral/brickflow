@@ -1,3 +1,4 @@
+import type { HasValidPathSegmentKeys } from '../path-segment'
 import type {
   BoundarySignalHandlers,
   InternalSignalHandlers,
@@ -28,6 +29,13 @@ export type SignalsOf<F extends Flow> =
   DeclaredProperty<F, 'signals', Empty> extends object
     ? DeclaredProperty<F, 'signals', Empty>
     : Empty
+
+export type ValidFlow<F extends Flow> =
+  HasValidPathSegmentKeys<DependenciesOf<F>> extends true
+    ? HasValidPathSegmentKeys<SignalsOf<F>> extends true
+      ? F
+      : never
+    : never
 
 export type FlowOf<Implementation> = Implementation extends FlowImplementation<infer F> ? F : never
 

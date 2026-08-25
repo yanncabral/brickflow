@@ -89,6 +89,10 @@ new Layer('invalid', { invalid: {} })
 // @ts-expect-error reserved names cannot be used as entries
 new Layer('invalid', { provide: getUser })
 
+// @ts-expect-error Layer IDs must not be empty
+new Layer('', { getUser })
+// @ts-expect-error Layer entry keys must not be empty
+new Layer('valid', { '': getUser })
 // @ts-expect-error dot is reserved in Layer IDs
 new Layer('invalid.id', { getUser })
 // @ts-expect-error dot is reserved in Layer entry keys

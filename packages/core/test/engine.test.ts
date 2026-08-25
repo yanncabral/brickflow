@@ -29,6 +29,30 @@ describe('ExecutionContext', () => {
     expect(names).toEqual(['files.editFile.approve', 'files.editFile.validate.approve'])
   })
 
+  test('rejects invalid constructor path segments', () => {
+    for (const invalid of ['', 'nested.path']) {
+      expect(
+        () => new ExecutionContext({ layerPath: ['files', invalid], callId: 'call-layer' })
+      ).toThrow(/invalid path segment/i)
+      expect(
+        () => new ExecutionContext({ flowPath: ['editFile', invalid], callId: 'call-flow' })
+      ).toThrow(/invalid path segment/i)
+    }
+  })
+
+  test('rejects invalid child path segments', () => {
+    const context = new ExecutionContext({
+      layerPath: ['files'],
+      flowPath: ['editFile'],
+      callId: 'call-1'
+    })
+
+    for (const invalid of ['', 'nested.path']) {
+      expect(() => context.childLayer(invalid)).toThrow(/invalid path segment/i)
+      expect(() => context.childFlow(invalid, 'call-2')).toThrow(/invalid path segment/i)
+    }
+  })
+
   test('creates immutable child contexts with namespaced paths and inherited state', async () => {
     const handlers = createSignalHandlerChain({ approve: () => 'ok' }, undefined, true)
     const root = new ExecutionContext({

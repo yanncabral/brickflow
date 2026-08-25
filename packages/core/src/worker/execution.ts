@@ -80,10 +80,10 @@ async function executeResolvedFlow<F extends Flow>(
         const localHandlers = callOptions?.signals
           ? createSignalHandlerChain(
               Object.fromEntries(
-                Object.entries(callOptions.signals).map(([name, handler]) => [
-                  [...signalPath, name].join('.'),
-                  handler
-                ])
+                Object.entries(callOptions.signals).map(([name, handler]) => {
+                  assertValidPathSegment(name)
+                  return [[...signalPath, name].join('.'), handler]
+                })
               ) as UnknownSignalHandlers,
               parentSignalHandlers,
               false

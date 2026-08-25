@@ -21,6 +21,15 @@ describe('signals', () => {
     expect(durableSignalName(['files', 'editFile'], 'approve')).toBe('files.editFile.approve')
   })
 
+  test('rejects empty signal names and namespace segments', () => {
+    expect(() => namespaceSignalHandlers([''], { approve: () => 'invalid' })).toThrow(
+      /invalid path segment.*must not be empty/i
+    )
+    expect(() => durableSignalName(['files'], '')).toThrow(
+      /invalid path segment.*must not be empty/i
+    )
+  })
+
   test('resolves locally before consulting the parent', async () => {
     const calls: string[] = []
     const parent = createSignalHandlerChain(

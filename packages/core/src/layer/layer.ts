@@ -47,7 +47,6 @@ class LayerImplementation<
 
   constructor(id: Id, entries: Entries, providers?: Provided) {
     super()
-    if (id.length === 0) throw new Error('Layer ID must not be empty')
     assertValidPathSegment(id)
 
     for (const [key, entry] of Object.entries(entries)) {

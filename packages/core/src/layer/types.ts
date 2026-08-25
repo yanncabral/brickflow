@@ -11,20 +11,11 @@ import type {
   ResultOf,
   SignalsOf
 } from '../flow/types'
+import type { ValidatePathSegmentKeys, ValidPathSegment } from '../path-segment'
 import type { BoundarySignalHandlers, SignalDefinitions } from '../signal/types'
 import type { FlowRun } from '../worker/types'
 
 export type Providers = Readonly<Record<string, unknown>>
-
-type ValidPathSegment<Value extends string> = Value extends `${string}.${string}` ? never : Value
-
-type ValidatePathSegmentKeys<Entries extends LayerEntries> = {
-  readonly [Key in keyof Entries]: Key extends string
-    ? Key extends `${string}.${string}`
-      ? never
-      : Entries[Key]
-    : Entries[Key]
-}
 
 export interface AnyLayer {
   readonly id: string

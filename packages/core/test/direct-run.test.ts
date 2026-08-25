@@ -230,9 +230,11 @@ describe('direct Flow execution', () => {
     const nested = flow<NestedFlow>(async (_params, _requirements, dependencies) =>
       dependencies.child(undefined)
     )
-    const root = flow<RootFlow>(async (_params, _requirements, dependencies) =>
-      dependencies['parent.child'](undefined)
-    )
+    const root = flow<RootFlow>((async (
+      _params: undefined,
+      _requirements: Empty,
+      dependencies: { 'parent.child': (params: undefined) => Promise<string> }
+    ) => dependencies['parent.child'](undefined)) as never)
 
     const run = root.run(undefined, {
       dependencies: {
@@ -244,6 +246,43 @@ describe('direct Flow execution', () => {
     await expect(Promise.resolve(run)).rejects.toThrow(
       /invalid path segment.*parent\.child.*\.\W.*reserved delimiter/i
     )
+  })
+
+  test('rejects empty direct dependency aliases before root signal paths can collide', async () => {
+    interface ChildFlow extends Flow {
+      params: undefined
+      result: string
+      signals: { approve: { request: undefined; response: string } }
+    }
+    interface RootFlow extends Flow {
+      params: undefined
+      result: string
+      signals: { approve: { request: undefined; response: string } }
+      depends: { '': ChildFlow }
+    }
+
+    let rootSignalCalls = 0
+    const child = flow<ChildFlow>(async (_params, _requirements, _dependencies, { signals }) =>
+      signals.approve(undefined)
+    )
+    const root = flow<RootFlow>((async (
+      _params: undefined,
+      _requirements: Empty,
+      dependencies: { '': (params: undefined) => Promise<string> }
+    ) => dependencies[''](undefined)) as never)
+
+    const run = root.run(undefined, {
+      dependencies: { '': { flow: child } },
+      signals: {
+        approve: () => {
+          rootSignalCalls += 1
+          return 'root'
+        }
+      }
+    } as never)
+
+    await expect(Promise.resolve(run)).rejects.toThrow(/invalid path segment.*must not be empty/i)
+    expect(rootSignalCalls).toBe(0)
   })
 
   test('preserves typed recovery and rejects unexpected defects', async () => {
@@ -830,6 +869,89 @@ describe('Layer-bound Flow execution', () => {
     ).resolves.toBe('local')
   })
 
+  test('rejects dotted and empty local signal overrides before descendant interception', async () => {
+    interface LeafFlow extends Flow {
+      params: undefined
+      result: string
+      signals: { approve: { request: undefined; response: string } }
+    }
+    interface ChildFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { leaf: LeafFlow }
+    }
+    interface RootFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { child: ChildFlow }
+    }
+
+    let descendantCalls = 0
+    const leaf = flow<LeafFlow>(async (_params, _requirements, _dependencies, { signals }) =>
+      signals.approve(undefined)
+    )
+    const child = flow<ChildFlow>(async (_params, _requirements, dependencies) =>
+      dependencies.leaf(undefined)
+    )
+
+    for (const invalid of ['leaf.approve', '']) {
+      const root = flow<RootFlow>(async (_params, _requirements, dependencies) =>
+        dependencies.child(undefined, {
+          signals: {
+            [invalid]: () => {
+              descendantCalls += 1
+              return 'intercepted'
+            }
+          }
+        } as never)
+      )
+
+      const run = root.run(undefined, {
+        dependencies: {
+          child: { flow: child, dependencies: { leaf: { flow: leaf } } }
+        },
+        signals: {
+          child: {
+            leaf: {
+              approve: () => {
+                descendantCalls += 1
+                return 'boundary'
+              }
+            }
+          }
+        }
+      })
+
+      await expect(Promise.resolve(run)).rejects.toThrow(/invalid path segment/i)
+    }
+    expect(descendantCalls).toBe(0)
+  })
+
+  test('rejects empty bound dependency aliases before path collisions', async () => {
+    interface LeafFlow extends Flow {
+      params: undefined
+      result: string
+    }
+    interface RootFlow extends Flow {
+      params: undefined
+      result: string
+      depends: { '': LeafFlow }
+    }
+
+    const leaf = flow<LeafFlow>(() => 'leaf')
+    const root = flow<RootFlow>((async (
+      _params: undefined,
+      _requirements: Empty,
+      dependencies: { '': (params: undefined) => Promise<string> }
+    ) => dependencies[''](undefined)) as never)
+    const app = new Layer('app', { root })
+    const run = app.root.run(undefined, {
+      dependencies: { '': { flow: leaf } }
+    } as never)
+
+    await expect(Promise.resolve(run)).rejects.toThrow(/invalid path segment.*must not be empty/i)
+  })
+
   test('rejects dotted bound dependency aliases before nested paths can collide', async () => {
     interface LeafFlow extends Flow {
       params: undefined
@@ -842,9 +964,11 @@ describe('Layer-bound Flow execution', () => {
     }
 
     const leaf = flow<LeafFlow>(() => 'leaf')
-    const root = flow<RootFlow>(async (_params, _requirements, dependencies) =>
-      dependencies['parent.child'](undefined)
-    )
+    const root = flow<RootFlow>((async (
+      _params: undefined,
+      _requirements: Empty,
+      dependencies: { 'parent.child': (params: undefined) => Promise<string> }
+    ) => dependencies['parent.child'](undefined)) as never)
     const app = new Layer('app', { root })
     const run = app.root.run(undefined, {
       dependencies: { 'parent.child': { flow: leaf } }
@@ -855,6 +979,26 @@ describe('Layer-bound Flow execution', () => {
     )
   })
 
+  test('rejects empty signal names before namespaced dispatch can collide', async () => {
+    interface SignalledFlow extends Flow {
+      params: undefined
+      result: string
+      signals: { '': { request: undefined; response: string } }
+    }
+
+    const signalled = flow<SignalledFlow>((async (
+      _params: undefined,
+      _requirements: Empty,
+      _dependencies: Empty,
+      { signals }: { signals: { '': (request: undefined) => Promise<string> } }
+    ) => signals[''](undefined)) as never)
+    expect(() =>
+      signalled.run(undefined, {
+        signals: { '': () => 'invalid' }
+      } as never)
+    ).toThrow(/invalid path segment.*must not be empty/i)
+  })
+
   test('rejects dotted signal names before namespaced dispatch can collide', async () => {
     interface SignalledFlow extends Flow {
       params: undefined
@@ -862,10 +1006,12 @@ describe('Layer-bound Flow execution', () => {
       signals: { 'status.refresh': { request: undefined; response: string } }
     }
 
-    const signalled = flow<SignalledFlow>(
-      async (_params, _requirements, _dependencies, { signals }) =>
-        signals['status.refresh'](undefined)
-    )
+    const signalled = flow<SignalledFlow>((async (
+      _params: undefined,
+      _requirements: Empty,
+      _dependencies: Empty,
+      { signals }: { signals: { 'status.refresh': (request: undefined) => Promise<string> } }
+    ) => signals['status.refresh'](undefined)) as never)
     expect(() =>
       signalled.run(undefined, {
         signals: { 'status.refresh': () => 'invalid' }

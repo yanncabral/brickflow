@@ -129,6 +129,15 @@ describe('Layer', () => {
     )
   })
 
+  test('rejects empty Layer IDs and entry keys', () => {
+    expect(() => new Layer('' as never, { getUser } as never)).toThrow(
+      /invalid path segment.*must not be empty/i
+    )
+    expect(() => new Layer('users', { '': getUser } as never)).toThrow(
+      /invalid path segment.*must not be empty/i
+    )
+  })
+
   test('rejects dotted Layer IDs and entry keys because dot is reserved', () => {
     expect(() => new Layer('invalid.id' as never, { getUser } as never)).toThrow(
       /invalid path segment.*invalid\.id.*\.\W.*reserved delimiter/i

@@ -42,6 +42,7 @@ export function namespaceSignalHandlers<const Path extends readonly string[], Ha
   path: Path,
   handlers: Handlers
 ): NamespacedHandlers<Path, Handlers> {
+  for (const segment of path) assertValidPathSegment(segment)
   return path.reduceRight<unknown>(
     (nested, segment) => ({ [segment]: nested }),
     handlers
@@ -49,7 +50,9 @@ export function namespaceSignalHandlers<const Path extends readonly string[], Ha
 }
 
 export function durableSignalName(path: readonly string[], signalName: string): string {
-  return [...path, signalName].filter((segment) => segment.length > 0).join('.')
+  for (const segment of path) assertValidPathSegment(segment)
+  assertValidPathSegment(signalName)
+  return [...path, signalName].join('.')
 }
 
 export function signalCallMetadata(
