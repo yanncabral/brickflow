@@ -110,20 +110,6 @@ type EffectiveRequirementsFromEntries<Entries extends LayerEntries> = {
 
 type FlowOfEntry<Entry> = Entry extends FlowImplementation<infer F extends Flow> ? F : never
 
-type DirectFlowEntryForAlias<
-  Entries extends LayerEntries,
-  Alias extends PropertyKey,
-  Path extends readonly PropertyKey[] = readonly []
-> = Alias extends keyof Entries
-  ? Entries[Alias] extends FlowImplementation<infer _F extends Flow>
-    ? {
-        readonly path: readonly [...Path, Alias]
-        readonly implementation: Entries[Alias]
-        readonly scope: Entries
-      }
-    : never
-  : never
-
 type FlattenedFlowEntryForAlias<
   Entries extends LayerEntries,
   Alias extends PropertyKey,
@@ -157,27 +143,31 @@ type UniqueGlobalFlowEntryForAlias<
   Match = FlattenedFlowEntryForAlias<RootEntries, Alias>
 > = [Match] extends [never] ? never : true extends IsUnion<Match> ? never : Match
 
+type ScopedFlowEntryForAlias<
+  RootEntries extends LayerEntries,
+  ScopeEntries extends LayerEntries,
+  Alias extends PropertyKey,
+  Match = FlattenedFlowEntryForAlias<RootEntries, Alias>
+> = Match extends { readonly scope: infer CandidateScope extends LayerEntries }
+  ? [CandidateScope] extends [ScopeEntries]
+    ? [ScopeEntries] extends [CandidateScope]
+      ? Match
+      : never
+    : never
+  : never
+
 type ResolvedFlowEntry<
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
   Alias extends PropertyKey,
-  Direct = DirectFlowEntryForAlias<ScopeEntries, Alias>
+  Direct = ScopedFlowEntryForAlias<RootEntries, ScopeEntries, Alias>
 > = [Direct] extends [never] ? UniqueGlobalFlowEntryForAlias<RootEntries, Alias> : Direct
-
-type ResolvedFlowEntryFromRoot<RootEntries extends LayerEntries, Alias extends PropertyKey> =
-  DirectFlowEntryForAlias<RootEntries, Alias> extends infer Direct
-    ? [Direct] extends [never]
-      ? UniqueGlobalFlowEntryForAlias<RootEntries, Alias>
-      : Direct
-    : never
 
 type ResolvedFlowEntryForSignals<
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
   Alias extends PropertyKey
-> = ScopeEntries extends RootEntries
-  ? ResolvedFlowEntry<RootEntries, ScopeEntries, Alias>
-  : ResolvedFlowEntryFromRoot<RootEntries, Alias>
+> = ResolvedFlowEntry<RootEntries, ScopeEntries, Alias>
 
 type OwnSignalHandlers<F extends Flow> =
   SignalsOf<F> extends SignalDefinitions

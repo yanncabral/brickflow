@@ -16,7 +16,10 @@ export function flattenNamespacedSignalHandlers(
   handlers: Readonly<Record<string, unknown>>,
   path: readonly string[] = []
 ): UnknownSignalHandlers {
-  const flattened: Record<string, NonNullable<UnknownSignalHandlers[string]>> = {}
+  const flattened = Object.create(null) as Record<
+    string,
+    NonNullable<UnknownSignalHandlers[string]>
+  >
 
   for (const [name, value] of Object.entries(handlers)) {
     assertValidPathSegment(name)

@@ -291,8 +291,11 @@ const layerResolvedSignalApp = new Layer('app', {
   checkout: new Layer('checkout', {
     checkout: layerResolvedCheckout,
     repository: layerResolvedRepository
-  })
+  }),
+  reporting: new Layer('reporting', { repository: layerResolvedRepository })
 })
+// @ts-expect-error the locally resolved nested repository signal handler is required
+layerResolvedSignalApp.order.run(undefined)
 layerResolvedSignalApp.order.run(undefined, {
   signals: { app: { checkout: { repository: { refresh: () => 'refreshed' } } } }
 })

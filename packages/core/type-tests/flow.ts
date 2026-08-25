@@ -56,6 +56,33 @@ interface DottedSignalNameFlow extends Flow {
   signals: { 'quiet.signal': { request: undefined; response: string } }
 }
 
+declare const symbolDependencyAlias: unique symbol
+declare const symbolSignalName: unique symbol
+
+interface SymbolDependencyAliasFlow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { [symbolDependencyAlias]: QuietFlow }
+}
+
+interface NumericDependencyAliasFlow extends Flow {
+  params: undefined
+  result: undefined
+  depends: { 0: QuietFlow }
+}
+
+interface SymbolSignalNameFlow extends Flow {
+  params: undefined
+  result: undefined
+  signals: { [symbolSignalName]: { request: undefined; response: string } }
+}
+
+interface NumericSignalNameFlow extends Flow {
+  params: undefined
+  result: undefined
+  signals: { 0: { request: undefined; response: string } }
+}
+
 interface QuietFlow extends Flow {
   params: undefined
   result: number
@@ -83,6 +110,15 @@ flow<DottedDependencyAliasFlow>(() => undefined)
 flow<EmptySignalNameFlow>(() => undefined)
 // @ts-expect-error signal names must not contain dots
 flow<DottedSignalNameFlow>(() => undefined)
+
+// @ts-expect-error dependency aliases must be string keys
+flow<SymbolDependencyAliasFlow>(() => undefined)
+// @ts-expect-error numeric dependency aliases must be rejected instead of stringified
+flow<NumericDependencyAliasFlow>(() => undefined)
+// @ts-expect-error signal names must be string keys
+flow<SymbolSignalNameFlow>(() => undefined)
+// @ts-expect-error numeric signal names must be rejected instead of stringified
+flow<NumericSignalNameFlow>(() => undefined)
 
 const quiet = flow<QuietFlow>(() => 1)
 quiet satisfies FlowImplementation<QuietFlow>

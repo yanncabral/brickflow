@@ -36,7 +36,7 @@ export async function resolveSignal<Response>(
   signalName: string,
   request: unknown
 ): Promise<Response> {
-  const handler = chain.handlers[signalName]
+  const handler = Object.hasOwn(chain.handlers, signalName) ? chain.handlers[signalName] : undefined
   if (handler) {
     const response = await handler(request)
     if (response !== undefined) {

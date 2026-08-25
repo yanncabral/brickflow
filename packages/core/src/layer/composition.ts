@@ -90,7 +90,7 @@ export function resolveLayerDependency(
 }
 
 export function effectiveLayerProviders(layer: AnyLayer): Readonly<Record<string, unknown>> {
-  const providers: Record<string, unknown> = {}
+  const providers = Object.create(null) as Record<string, unknown>
   const sources = new Map<string, string>()
   const topLevelKeys = new Set(Object.keys(layer.providers))
 

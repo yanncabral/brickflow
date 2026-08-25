@@ -64,6 +64,70 @@ describe('Layer', () => {
     )
   })
 
+  test('preserves prototype-named providers through nested provide and override', async () => {
+    interface PrototypeProvidersFlow extends Flow {
+      params: undefined
+      result: readonly [unknown, unknown, unknown]
+      requires: { __proto__: unknown; constructor: unknown; prototype: unknown }
+    }
+
+    const inspectProviders = flow<PrototypeProvidersFlow>(
+      (_params, { __proto__: proto, constructor: constructorProvider, prototype }) => [
+        proto,
+        constructorProvider,
+        prototype
+      ]
+    )
+    const nestedValues = {
+      ['__proto__']: { source: 'nested-proto' },
+      constructor: { source: 'nested-constructor' },
+      prototype: { source: 'nested-prototype' }
+    }
+    const replacementValues = {
+      ['__proto__']: { source: 'outer-proto' },
+      constructor: { source: 'outer-constructor' },
+      prototype: { source: 'outer-prototype' }
+    }
+    const nested = new Layer('nested', { inspectProviders }).provide(nestedValues)
+    const app = new Layer('app', { nested })
+    const overridden = app.override(replacementValues)
+
+    expect(Object.isFrozen(nested.providers)).toBe(true)
+    expect(Object.hasOwn(nested.providers, '__proto__')).toBe(true)
+    expect(Object.hasOwn(overridden.providers, '__proto__')).toBe(true)
+    expect(await app.nested.inspectProviders.run(undefined)).toEqual([
+      Reflect.get(nestedValues, '__proto__'),
+      nestedValues.constructor,
+      nestedValues.prototype
+    ])
+    expect(await overridden.nested.inspectProviders.run(undefined)).toEqual([
+      Reflect.get(replacementValues, '__proto__'),
+      replacementValues.constructor,
+      replacementValues.prototype
+    ])
+  })
+
+  test('detects conflicting nested prototype-named providers', () => {
+    interface PrototypeProviderFlow extends Flow {
+      params: undefined
+      result: unknown
+      requires: { __proto__: unknown }
+    }
+
+    const readPrototype = flow<PrototypeProviderFlow>((_params, providers) => providers.__proto__)
+    const first = new Layer('first', { readPrototype }).provide({
+      ['__proto__']: { source: 'first' }
+    })
+    const second = new Layer('second', { readPrototype }).provide({
+      ['__proto__']: { source: 'second' }
+    })
+    const app = new Layer('app', { first, second })
+
+    expect(() => app.first.readPrototype.run(undefined)).toThrow(
+      /conflicting nested layer provider.*__proto__/i
+    )
+  })
+
   test('overrides nested effective providers at the outer layer without mutation', async () => {
     interface ReadUserFlow extends Flow {
       params: { id: string }

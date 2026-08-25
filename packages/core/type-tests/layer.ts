@@ -89,6 +89,12 @@ new Layer('invalid', { invalid: {} })
 // @ts-expect-error reserved names cannot be used as entries
 new Layer('invalid', { provide: getUser })
 
+declare const symbolLayerEntry: unique symbol
+// @ts-expect-error Layer entry keys must be string keys
+new Layer('invalid', { [symbolLayerEntry]: getUser })
+// @ts-expect-error numeric Layer entry keys must be rejected instead of stringified
+new Layer('invalid', { 0: getUser })
+
 // @ts-expect-error Layer IDs must not be empty
 new Layer('', { getUser })
 // @ts-expect-error Layer entry keys must not be empty
