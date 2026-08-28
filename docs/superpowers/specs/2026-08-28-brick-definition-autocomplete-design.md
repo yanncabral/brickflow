@@ -166,6 +166,31 @@ Editor completion itself is supplied by TypeScript contextual typing and is not 
 
 Runtime tests should be migrated mechanically to the new declaration syntax and continue asserting unchanged behavior.
 
+## Validated and Branded Domain Types
+
+Brick does not need a schema dependency or a Standard Schema integration to consume values validated by Zod, TypeBox, ArkType, or another schema library. Users should validate unknown data once at an application or transport boundary, infer the library's validated output type, and use that type directly in a Brick contract.
+
+For example, a Zod brand can distinguish a validated email from an arbitrary string:
+
+```ts
+const EmailSchema = z.string().email().brand<'Email'>()
+type Email = z.infer<typeof EmailSchema>
+
+type SendEmailBrick = Brick<{
+  params: { email: Email }
+  result: void
+}>
+
+const email = EmailSchema.parse(untrustedEmail)
+await sendEmail.run({ email })
+```
+
+A plain `string` must not satisfy `Email`, while the validated value can pass through any number of Bricks without repeated runtime validation. Other libraries may provide branded, refined, transformed, or otherwise narrowed output types through their own inference APIs or through Standard Schema output inference.
+
+Core remains schema-library-neutral. It must not import schema packages, automatically parse Brick inputs or outputs, or invent a cross-library brand. Validation is repeated only when data crosses a boundary that invalidates type trust, such as HTTP input, queue input, persisted data, or a future durable serialization boundary.
+
 ## Documentation
 
 `docs/architecture/agent-context.md` and executable examples must present `Brick<{ ... }>` as the canonical contract declaration. Documentation should explain that this form is chosen for autocomplete and that `brick<Contract>(handler)` remains the executable factory.
+
+The root README and architecture context must also document the recommended validated-domain-type pattern: validate once at an untrusted boundary, use the schema library's inferred branded or refined output type in `Brick<{ ... }>`, and pass that value through the trusted Brick graph without revalidation. The documentation must make clear that Brick has no runtime schema integration.
