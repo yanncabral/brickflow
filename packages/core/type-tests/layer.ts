@@ -12,17 +12,17 @@ import {
 type Database = { find(id: string): string }
 type Logger = { log(message: string): void }
 
-interface GetUserBrick extends Brick {
+type GetUserBrick = Brick<{
   params: { id: string }
   result: { id: string }
   requires: { database: Database; logger: Logger }
-}
+}>
 
-interface AuditBrick extends Brick {
+type AuditBrick = Brick<{
   params: undefined
   result: undefined
   requires: { logger: Logger }
-}
+}>
 
 const getUser = brick<GetUserBrick>(({ id }) => ({ id }))
 const audit = brick<AuditBrick>(() => undefined)
@@ -106,17 +106,17 @@ new Layer('valid', { 'get.user': getUser })
 
 type Repository = { get(id: string): string }
 
-interface RepositoryBrick extends Brick {
+type RepositoryBrick = Brick<{
   params: undefined
   result: undefined
   requires: { repository: Repository }
-}
+}>
 
-interface TransitiveRequirementBrick extends Brick {
+type TransitiveRequirementBrick = Brick<{
   params: undefined
   result: undefined
   depends: { repositoryWorker: RepositoryBrick }
-}
+}>
 
 const repository: Repository = { get: (id) => id }
 const repositoryWorker = brick<RepositoryBrick>(() => undefined)
@@ -201,11 +201,11 @@ outerRepositoryProvided.override({ repository: 1 })
 // @ts-expect-error truly absent provider keys cannot be overridden
 outerRepositoryProvided.override({ arbitrary: true })
 
-interface ConflictingTransitiveRepositoryBrick extends Brick {
+type ConflictingTransitiveRepositoryBrick = Brick<{
   params: undefined
   result: undefined
   requires: { repository: number }
-}
+}>
 
 const conflictingTransitiveRepository = brick<ConflictingTransitiveRepositoryBrick>(() => undefined)
 const nestedEffectiveConflictLayer = new Layer('nested-effective-conflict', {
@@ -219,16 +219,16 @@ type PrimaryService = { kind: 'primary'; run(): string }
 type SecondaryService = { kind: 'secondary'; run(): string }
 type UnionService = PrimaryService | SecondaryService
 
-interface UnionServiceBrick extends Brick {
+type UnionServiceBrick = Brick<{
   params: undefined
   result: undefined
   requires: { service: UnionService }
-}
-interface CompatibleUnionServiceBrick extends Brick {
+}>
+type CompatibleUnionServiceBrick = Brick<{
   params: undefined
   result: undefined
   requires: { service: UnionService }
-}
+}>
 
 const unionService = brick<UnionServiceBrick>(() => undefined)
 const compatibleUnionService = brick<CompatibleUnionServiceBrick>(() => undefined)
@@ -245,23 +245,23 @@ duplicateUnionRequirement satisfies UnionService
 singleUnionLayer.provide({ service: { kind: 'primary', run: () => 'ok' } })
 duplicateUnionLayer.provide({ service: { kind: 'secondary', run: () => 'ok' } })
 
-interface DeclaredDependencyBrick extends Brick {
+type DeclaredDependencyBrick = Brick<{
   params: { id: string }
   result: string
-}
-interface CompatibleDependencyBrick extends Brick {
+}>
+type CompatibleDependencyBrick = Brick<{
   params: { id: string }
   result: string
-}
-interface IncompatibleDependencyBrick extends Brick {
+}>
+type IncompatibleDependencyBrick = Brick<{
   params: { count: number }
   result: number
-}
-interface DependencyCallerBrick extends Brick {
+}>
+type DependencyCallerBrick = Brick<{
   params: undefined
   result: string
   depends: { child: DeclaredDependencyBrick }
-}
+}>
 
 const compatibleDependency = brick<CompatibleDependencyBrick>(({ id }) => id)
 const incompatibleDependency = brick<IncompatibleDependencyBrick>(({ count }) => count)
@@ -312,11 +312,11 @@ new Layer('ambiguous-global-dependency', {
   incompatibleNestedDependency
 })
 
-interface ConflictingLoggerBrick extends Brick {
+type ConflictingLoggerBrick = Brick<{
   params: undefined
   result: undefined
   requires: { logger: { write(value: number): void } }
-}
+}>
 
 const conflictLayer = new Layer('conflict', {
   audit,

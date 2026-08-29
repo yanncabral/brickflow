@@ -10,35 +10,35 @@ import {
 
 type Empty = Record<never, never>
 
-interface PlainBrick extends Brick {
+type PlainBrick = Brick<{
   params: { value: number }
   result: number
-}
+}>
 
-interface GrandchildBrick extends Brick {
+type GrandchildBrick = Brick<{
   params: { id: string }
   result: string
   requires: { logger: { log(message: string): void } }
-}
+}>
 
-interface ChildBrick extends Brick {
+type ChildBrick = Brick<{
   params: { id: string }
   result: string
   requires: { repository: { find(id: string): string } }
   depends: { grandchild: GrandchildBrick }
-}
+}>
 
-interface ConfiguredBrick extends Brick {
+type ConfiguredBrick = Brick<{
   params: { id: string }
   result: string
   depends: { child: ChildBrick }
-}
+}>
 
-interface SignalledBrick extends Brick {
+type SignalledBrick = Brick<{
   params: { id: string }
   result: boolean
   signals: { approve: { request: { id: string }; response: boolean } }
-}
+}>
 
 const plain = brick<PlainBrick>(({ value }) => value)
 const grandchild = brick<GrandchildBrick>(({ id }, { logger }) => {
@@ -160,17 +160,17 @@ signalledLayer.signalled.run(
 // @ts-expect-error bound signal handlers are required
 signalledLayer.signalled.run({ id: 'ada' })
 
-interface SuppliedSignalledChildBrick extends Brick {
+type SuppliedSignalledChildBrick = Brick<{
   params: { id: string }
   result: boolean
   signals: { approve: { request: { id: string }; response: boolean } }
-}
+}>
 
-interface SuppliedSignalledParentBrick extends Brick {
+type SuppliedSignalledParentBrick = Brick<{
   params: { id: string }
   result: boolean
   depends: { child: SuppliedSignalledChildBrick }
-}
+}>
 
 const suppliedSignalledChild = brick<SuppliedSignalledChildBrick>(
   async ({ id }, _requirements, _dependencies, { signals }) => signals.approve({ id })
@@ -196,12 +196,12 @@ suppliedSignalsApp.parent.run(
   }
 )
 
-interface MixedSignalledParentBrick extends Brick {
+type MixedSignalledParentBrick = Brick<{
   params: { id: string }
   result: boolean
   depends: { child: SuppliedSignalledChildBrick }
   signals: { confirm: { request: { id: string }; response: boolean } }
-}
+}>
 
 const mixedSignalledParent = brick<MixedSignalledParentBrick>(
   async ({ id }, _requirements, { child }, { signals }) =>
@@ -231,22 +231,22 @@ const app = new Layer('app', { nested: complete })
 const nestedResult: string = await app.nested.configured.run({ id: 'ada' })
 void nestedResult
 
-interface ScopedRepositoryBrick extends Brick {
+type ScopedRepositoryBrick = Brick<{
   params: undefined
   result: string
-}
+}>
 
-interface ScopedCheckoutBrick extends Brick {
+type ScopedCheckoutBrick = Brick<{
   params: undefined
   result: string
   depends: { repository: ScopedRepositoryBrick }
-}
+}>
 
-interface ScopedPlaceOrderBrick extends Brick {
+type ScopedPlaceOrderBrick = Brick<{
   params: undefined
   result: string
   depends: { checkout: ScopedCheckoutBrick }
-}
+}>
 
 const scopedRepository = brick<ScopedRepositoryBrick>(() => 'repository')
 const scopedCheckout = brick<ScopedCheckoutBrick>(async (_params, _requirements, dependencies) =>
@@ -268,21 +268,21 @@ const locallyResolvedApp = new Layer('app', {
 })
 locallyResolvedApp.placeOrder.run(undefined)
 
-interface LayerResolvedRepositoryBrick extends Brick {
+type LayerResolvedRepositoryBrick = Brick<{
   params: undefined
   result: string
   signals: { refresh: { request: undefined; response: string } }
-}
-interface LayerResolvedCheckoutBrick extends Brick {
+}>
+type LayerResolvedCheckoutBrick = Brick<{
   params: undefined
   result: string
   depends: { repository: LayerResolvedRepositoryBrick }
-}
-interface LayerResolvedOrderBrick extends Brick {
+}>
+type LayerResolvedOrderBrick = Brick<{
   params: undefined
   result: string
   depends: { checkout: LayerResolvedCheckoutBrick }
-}
+}>
 const layerResolvedRepository = brick<LayerResolvedRepositoryBrick>(() => 'repository')
 const layerResolvedCheckout = brick<LayerResolvedCheckoutBrick>(() => 'checkout')
 const layerResolvedOrder = brick<LayerResolvedOrderBrick>(() => 'order')
@@ -373,95 +373,95 @@ directlyUnresolvedApp.placeOrder.run(undefined, {
   }
 })
 
-interface DepthLeafBrick extends Brick {
+type DepthLeafBrick = Brick<{
   params: undefined
   result: undefined
-}
-interface Depth16Brick extends Brick {
+}>
+type Depth16Brick = Brick<{
   params: undefined
   result: undefined
   depends: { leaf: DepthLeafBrick }
-}
-interface Depth15Brick extends Brick {
+}>
+type Depth15Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth16: Depth16Brick }
-}
-interface Depth14Brick extends Brick {
+}>
+type Depth14Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth15: Depth15Brick }
-}
-interface Depth13Brick extends Brick {
+}>
+type Depth13Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth14: Depth14Brick }
-}
-interface Depth12Brick extends Brick {
+}>
+type Depth12Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth13: Depth13Brick }
-}
-interface Depth11Brick extends Brick {
+}>
+type Depth11Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth12: Depth12Brick }
-}
-interface Depth10Brick extends Brick {
+}>
+type Depth10Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth11: Depth11Brick }
-}
-interface Depth9Brick extends Brick {
+}>
+type Depth9Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth10: Depth10Brick }
-}
-interface Depth8Brick extends Brick {
+}>
+type Depth8Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth9: Depth9Brick }
-}
-interface Depth7Brick extends Brick {
+}>
+type Depth7Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth8: Depth8Brick }
-}
-interface Depth6Brick extends Brick {
+}>
+type Depth6Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth7: Depth7Brick }
-}
-interface Depth5Brick extends Brick {
+}>
+type Depth5Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth6: Depth6Brick }
-}
-interface Depth4Brick extends Brick {
+}>
+type Depth4Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth5: Depth5Brick }
-}
-interface Depth3Brick extends Brick {
+}>
+type Depth3Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth4: Depth4Brick }
-}
-interface Depth2Brick extends Brick {
+}>
+type Depth2Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth3: Depth3Brick }
-}
-interface Depth1Brick extends Brick {
+}>
+type Depth1Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth2: Depth2Brick }
-}
-interface DepthRootBrick extends Brick {
+}>
+type DepthRootBrick = Brick<{
   params: undefined
   result: undefined
   depends: { depth1: Depth1Brick }
-}
+}>
 
 declare const depthRoot: ReturnType<typeof brick<DepthRootBrick>>
 declare const depth1: ReturnType<typeof brick<Depth1Brick>>
@@ -585,96 +585,96 @@ depthBoundedLayer.depthRoot.run(undefined, {
   }
 })
 
-interface DepthSignalLeafBrick extends Brick {
+type DepthSignalLeafBrick = Brick<{
   params: undefined
   result: undefined
   signals: { refresh: { request: undefined; response: boolean } }
-}
-interface DepthSignal16Brick extends Brick {
+}>
+type DepthSignal16Brick = Brick<{
   params: undefined
   result: undefined
   depends: { leaf: DepthSignalLeafBrick }
-}
-interface DepthSignal15Brick extends Brick {
+}>
+type DepthSignal15Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth16: DepthSignal16Brick }
-}
-interface DepthSignal14Brick extends Brick {
+}>
+type DepthSignal14Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth15: DepthSignal15Brick }
-}
-interface DepthSignal13Brick extends Brick {
+}>
+type DepthSignal13Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth14: DepthSignal14Brick }
-}
-interface DepthSignal12Brick extends Brick {
+}>
+type DepthSignal12Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth13: DepthSignal13Brick }
-}
-interface DepthSignal11Brick extends Brick {
+}>
+type DepthSignal11Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth12: DepthSignal12Brick }
-}
-interface DepthSignal10Brick extends Brick {
+}>
+type DepthSignal10Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth11: DepthSignal11Brick }
-}
-interface DepthSignal9Brick extends Brick {
+}>
+type DepthSignal9Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth10: DepthSignal10Brick }
-}
-interface DepthSignal8Brick extends Brick {
+}>
+type DepthSignal8Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth9: DepthSignal9Brick }
-}
-interface DepthSignal7Brick extends Brick {
+}>
+type DepthSignal7Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth8: DepthSignal8Brick }
-}
-interface DepthSignal6Brick extends Brick {
+}>
+type DepthSignal6Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth7: DepthSignal7Brick }
-}
-interface DepthSignal5Brick extends Brick {
+}>
+type DepthSignal5Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth6: DepthSignal6Brick }
-}
-interface DepthSignal4Brick extends Brick {
+}>
+type DepthSignal4Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth5: DepthSignal5Brick }
-}
-interface DepthSignal3Brick extends Brick {
+}>
+type DepthSignal3Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth4: DepthSignal4Brick }
-}
-interface DepthSignal2Brick extends Brick {
+}>
+type DepthSignal2Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth3: DepthSignal3Brick }
-}
-interface DepthSignal1Brick extends Brick {
+}>
+type DepthSignal1Brick = Brick<{
   params: undefined
   result: undefined
   depends: { depth2: DepthSignal2Brick }
-}
-interface DepthSignalRootBrick extends Brick {
+}>
+type DepthSignalRootBrick = Brick<{
   params: undefined
   result: undefined
   depends: { depth1: DepthSignal1Brick }
-}
+}>
 
 declare const depthSignalRoot: ReturnType<typeof brick<DepthSignalRootBrick>>
 type DepthSignalRunOptions = BrickRunOptions<DepthSignalRootBrick>
@@ -695,21 +695,21 @@ void omittedDepthSignalOptions
 void emptyDepthSignalOptions
 void incompleteDepthSignalOptions
 
-interface BooleanSignalChildBrick extends Brick {
+type BooleanSignalChildBrick = Brick<{
   params: undefined
   result: undefined
   signals: { approve: { request: undefined; response: boolean } }
-}
-interface StringSignalChildBrick extends Brick {
+}>
+type StringSignalChildBrick = Brick<{
   params: undefined
   result: undefined
   signals: { approve: { request: undefined; response: string } }
-}
-interface BooleanSignalParentBrick extends Brick {
+}>
+type BooleanSignalParentBrick = Brick<{
   params: undefined
   result: undefined
   depends: { child: BooleanSignalChildBrick }
-}
+}>
 declare const booleanSignalParent: ReturnType<typeof brick<BooleanSignalParentBrick>>
 declare const stringSignalChild: ReturnType<typeof brick<StringSignalChildBrick>>
 booleanSignalParent.run(undefined, {
