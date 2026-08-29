@@ -9,12 +9,12 @@ interface UserRepository {
   find(id: string): Promise<User | undefined>
 }
 
-export interface GetUserBrick extends Brick {
+export type GetUserBrick = Brick<{
   params: { id: string }
   result: User
   errors: 'user-not-found'
   requires: { userRepository: UserRepository }
-}
+}>
 
 export const getUser = brick<GetUserBrick>(
   async ({ id }, { userRepository }, _dependencies, { fail }) => {
@@ -23,18 +23,18 @@ export const getUser = brick<GetUserBrick>(
   }
 )
 
-export interface GetGreetingBrick extends Brick {
+export type GetGreetingBrick = Brick<{
   params: { id: string }
   result: { message: string }
   depends: { getUser: GetUserBrick }
-}
+}>
 
 export const getGreeting = brick<GetGreetingBrick>(async ({ id }, _requirements, { getUser }) => {
   const user = await getUser({ id })
   return { message: `Hello, ${user.name}!` }
 })
 
-export interface ApproveGreetingBrick extends Brick {
+export type ApproveGreetingBrick = Brick<{
   params: { id: string }
   result: { message: string; approved: boolean }
   depends: { getGreeting: GetGreetingBrick }
@@ -44,7 +44,7 @@ export interface ApproveGreetingBrick extends Brick {
       response: { approved: boolean }
     }
   }
-}
+}>
 
 export const approveGreeting = brick<ApproveGreetingBrick>(
   async ({ id }, _requirements, { getGreeting }, { signals }) => {
