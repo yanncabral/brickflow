@@ -40,7 +40,8 @@ bun run clean        # remove generated output
 
 - Develop behavior test-first. Run the focused runtime test or type-test and observe failure before implementation.
 - Keep public types in focused files; avoid one large barrel containing implementation logic.
-- A Brick interface is type-only; `brick<F>(handler)` creates a frozen executable implementation without tokens or requirement metadata.
+- Declare autocomplete-first contracts as named `Brick<{ ... }>` type aliases. `params` and `result` are required; `errors`, `requires`, `depends`, and `signals` are optional with precise empty defaults. `brick<Contract>(handler)` creates a frozen executable implementation without tokens or requirement metadata, and multiple implementations may share a contract.
+- Core is schema-neutral and performs no automatic input or output validation. Validate unknown data at untrusted boundaries, use schema-inferred branded, refined, or transformed types inside Brick contracts, and revalidate after persistence, messaging, or durable serialization boundaries where type trust is lost.
 - Direct runs supply dependencies as explicit recursive `{ brick, dependencies? }` nodes; `dependencies` is required when the selected Brick still has unresolved children. Layer-bound runs supply only unresolved branches, so a Layer-resolved node may be `{ dependencies: ... }` without `brick`. Bare Brick values are invalid.
 - Layer-bound aliases resolve caller-local first, then unique-global, then supplied fallback for missing or ambiguous aliases.
 - Signals mirror the selected dependency graph. Direct-run root signals are top-level; Layer-bound own signals use the full durable Brick path. Supplied dependency signals use recursive alias paths; Layer-resolved signals use durable Layer paths.

@@ -23,7 +23,7 @@ Current behavior. Read after `AGENTS.md`. Specs are history.
 ## Brick
 
 ```ts
-interface UseCase extends Brick {
+type UseCase = Brick<{
   params: Input
   result: Output
   errors: DomainFailure
@@ -32,19 +32,25 @@ interface UseCase extends Brick {
   signals: {
     approve: { request: Request; response: Response }
   }
-}
+}>
 
 const useCase = brick<UseCase>(handler)
 ```
 
-Omit `errors`, `requires`, `depends`, or `signals` when empty; when declared, the property itself is required.
+`Brick<{ ... }>` provides autocomplete for `params`, `result`, `errors`, `requires`, `depends`, and `signals`. `params` and `result` are required. The other fields are optional and default respectively to `never`, an empty requirements object, an empty dependencies object, and an empty signals object.
 
 Rules:
 
-- Interface is type-only.
-- `brick()` returns frozen executable implementation.
+- A named Brick contract is a reusable, erased TypeScript type; multiple implementations may share it.
+- `brick<Contract>(handler)` remains the unchanged executable factory and returns a frozen implementation.
 - No tokens or runtime requirement metadata.
 - Typed direct runs and Layer composition require missing providers statically. Runtime does not prevalidate provider keys because implementations carry no requirement metadata.
+
+## Validated domain types
+
+Core is schema-neutral: it imports no schema library and does not automatically parse or validate Brick inputs or outputs. Validate unknown data at application, transport, persistence, queue, or other untrusted boundaries, infer the schema library's validated output type, and use that branded, refined, transformed, or otherwise narrowed type directly in `Brick<{ ... }>`.
+
+Validated values may pass through the trusted Brick graph without repeated validation. Revalidate whenever data crosses a runtime boundary that invalidates type trust. In particular, brands are erased TypeScript information and must not be assumed to survive persistence, messaging, or a future durable serialization boundary without validation on the receiving side. Zod, TypeBox, ArkType, and Standard Schema-compatible libraries may be used through their output inference; the inferred type depends on the library and schema, and Brick does not provide or require a shared brand type.
 
 ## Execution
 
