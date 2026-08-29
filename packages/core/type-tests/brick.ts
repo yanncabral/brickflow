@@ -2,7 +2,18 @@ import { executeBrickImplementation } from '../src/brick/implementation'
 // @ts-expect-error obsolete Spec aliases are not part of the public API
 import type { SpecOf } from '../src/index'
 import * as publicApi from '../src/index'
-import { type Brick, type BrickHandler, type BrickImplementation, brick } from '../src/index'
+import {
+  type Brick,
+  type BrickHandler,
+  type BrickImplementation,
+  brick,
+  type DependenciesOf,
+  type ErrorsOf,
+  type ParamsOf,
+  type RequirementsOf,
+  type ResultOf,
+  type SignalsOf
+} from '../src/index'
 
 // @ts-expect-error raw execution helpers are internal, not part of the public barrel
 void publicApi.executeBrickImplementation
@@ -16,77 +27,126 @@ void publicApi.lookupLayer
 type _ObsoleteSpecOf = SpecOf<unknown>
 void (undefined as _ObsoleteSpecOf)
 
-interface GetUserBrick extends Brick {
+type GetUserBrick = Brick<{
   params: { id: string }
   result: { id: string }
   errors: 'user-not-found' | { type: 'unavailable'; retryAfter: number }
   requires: { users: { find(id: string): Promise<{ id: string } | undefined> } }
   signals: { refresh: { request: { force: boolean }; response: 'refreshed' } }
-}
+}>
 
-interface GetProfileBrick extends Brick {
+type GetProfileBrick = Brick<{
   params: { userId: string }
   result: { userId: string }
   errors: 'profile-not-found'
   requires: { profiles: { has(userId: string): boolean } }
   depends: { getUser: GetUserBrick }
-}
+}>
 
-interface EmptyDependencyAliasBrick extends Brick {
+type EmptyDependencyAliasBrick = Brick<{
   params: undefined
   result: undefined
   depends: { '': QuietBrick }
-}
+}>
 
-interface DottedDependencyAliasBrick extends Brick {
+type DottedDependencyAliasBrick = Brick<{
   params: undefined
   result: undefined
   depends: { 'quiet.child': QuietBrick }
-}
+}>
 
-interface EmptySignalNameBrick extends Brick {
+type EmptySignalNameBrick = Brick<{
   params: undefined
   result: undefined
   signals: { '': { request: undefined; response: string } }
-}
+}>
 
-interface DottedSignalNameBrick extends Brick {
+type DottedSignalNameBrick = Brick<{
   params: undefined
   result: undefined
   signals: { 'quiet.signal': { request: undefined; response: string } }
-}
+}>
 
 declare const symbolDependencyAlias: unique symbol
 declare const symbolSignalName: unique symbol
 
-interface SymbolDependencyAliasBrick extends Brick {
+type SymbolDependencyAliasBrick = Brick<{
   params: undefined
   result: undefined
   depends: { [symbolDependencyAlias]: QuietBrick }
-}
+}>
 
-interface NumericDependencyAliasBrick extends Brick {
+type NumericDependencyAliasBrick = Brick<{
   params: undefined
   result: undefined
   depends: { 0: QuietBrick }
-}
+}>
 
-interface SymbolSignalNameBrick extends Brick {
+type SymbolSignalNameBrick = Brick<{
   params: undefined
   result: undefined
   signals: { [symbolSignalName]: { request: undefined; response: string } }
-}
+}>
 
-interface NumericSignalNameBrick extends Brick {
+type NumericSignalNameBrick = Brick<{
   params: undefined
   result: undefined
   signals: { 0: { request: undefined; response: string } }
-}
+}>
 
-interface QuietBrick extends Brick {
+// @ts-expect-error dependency values must be Brick contracts
+type InvalidDependencyBrick = Brick<{
+  params: undefined
+  result: undefined
+  depends: { invalid: string }
+}>
+
+// @ts-expect-error signal definitions require request and response
+type InvalidSignalBrick = Brick<{
+  params: undefined
+  result: undefined
+  signals: { invalid: { request: string } }
+}>
+
+void (undefined as unknown as InvalidDependencyBrick)
+void (undefined as unknown as InvalidSignalBrick)
+
+type QuietBrick = Brick<{
   params: undefined
   result: number
-}
+}>
+
+type Equal<Left, Right> =
+  (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
+    ? true
+    : false
+
+type Expect<Value extends true> = Value
+
+type _GetUserParams = Expect<Equal<ParamsOf<GetUserBrick>, { id: string }>>
+type _GetUserResult = Expect<Equal<ResultOf<GetUserBrick>, { id: string }>>
+type _GetUserErrors = Expect<
+  Equal<ErrorsOf<GetUserBrick>, 'user-not-found' | { type: 'unavailable'; retryAfter: number }>
+>
+type _GetUserRequirements = Expect<
+  Equal<
+    RequirementsOf<GetUserBrick>,
+    { users: { find(id: string): Promise<{ id: string } | undefined> } }
+  >
+>
+type _GetProfileDependencies = Expect<
+  Equal<DependenciesOf<GetProfileBrick>, { getUser: GetUserBrick }>
+>
+type _GetUserSignals = Expect<
+  Equal<
+    SignalsOf<GetUserBrick>,
+    { refresh: { request: { force: boolean }; response: 'refreshed' } }
+  >
+>
+type _QuietErrors = Expect<Equal<ErrorsOf<QuietBrick>, never>>
+type _QuietRequirements = Expect<Equal<keyof RequirementsOf<QuietBrick>, never>>
+type _QuietDependencies = Expect<Equal<keyof DependenciesOf<QuietBrick>, never>>
+type _QuietSignals = Expect<Equal<keyof SignalsOf<QuietBrick>, never>>
 
 const getUser = brick<GetUserBrick>(async ({ id }, { users }, dependencies, { fail, signals }) => {
   const user = await users.find(id)
@@ -132,12 +192,12 @@ brick<GetUserBrick>(async (_params, _requirements, _dependencies, { fail }) => {
 })
 
 brick<GetUserBrick>(
-  // @ts-expect-error params must match the Brick interface
+  // @ts-expect-error params must match the Brick contract
   async ({ missing }) => ({ id: missing })
 )
 
 brick<GetUserBrick>(
-  // @ts-expect-error handler result must match the Brick interface
+  // @ts-expect-error handler result must match the Brick contract
   async ({ id }) => ({ userId: id })
 )
 

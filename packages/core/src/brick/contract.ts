@@ -1,15 +1,18 @@
+import type { SignalDefinitions } from '../signal/types'
 import { runDirectBrick } from '../worker/execution'
 import { markBrickImplementation } from './implementation'
 import type { BrickHandler, BrickImplementation, ValidBrick } from './types'
 
-export interface Brick {
+interface BrickConfig {
   params: unknown
   result: unknown
   errors?: unknown
   requires?: object
   depends?: Readonly<Record<string, Brick>>
-  signals?: object
+  signals?: SignalDefinitions
 }
+
+export type Brick<Config extends BrickConfig = BrickConfig> = Config
 
 export function brick<F extends Brick>(
   handler: F extends ValidBrick<F> ? BrickHandler<F> : never
