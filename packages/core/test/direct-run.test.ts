@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  type Brick,
+  brick,
   DuplicateLocalRunIdError,
   type EngineExecutionHandle,
   type EngineExecutionRequest,
   ExecutionContext,
-  type Flow,
-  flow,
   Layer,
   LocalRunCancelledError,
   LocalWorker,
@@ -32,42 +32,42 @@ class RecordingWorker implements Worker {
   }
 }
 
-interface PlainFlow extends Flow {
+type PlainBrick = Brick<{
   params: { value: number }
   result: number
-}
+}>
 
-interface GrandchildFlow extends Flow {
+type GrandchildBrick = Brick<{
   params: { id: string }
   result: string
   requires: { logger: { log(message: string): void } }
-}
+}>
 
-interface ChildFlow extends Flow {
+type ChildBrick = Brick<{
   params: { id: string }
   result: string
   errors: 'missing'
   requires: { repository: { find(id: string): string | undefined } }
-  depends: { grandchild: GrandchildFlow }
-}
+  depends: { grandchild: GrandchildBrick }
+}>
 
-interface ParentFlow extends Flow {
+type ParentBrick = Brick<{
   params: { id: string }
   result: string
-  depends: { child: ChildFlow }
-}
+  depends: { child: ChildBrick }
+}>
 
-const plain = flow<PlainFlow>(({ value }) => value * 2)
-const grandchild = flow<GrandchildFlow>(({ id }, { logger }) => {
+const plain = brick<PlainBrick>(({ value }) => value * 2)
+const grandchild = brick<GrandchildBrick>(({ id }, { logger }) => {
   logger.log(id)
   return `hello ${id}`
 })
-const child = flow<ChildFlow>(async ({ id }, { repository }, { grandchild }, { fail }) => {
+const child = brick<ChildBrick>(async ({ id }, { repository }, { grandchild }, { fail }) => {
   const name = repository.find(id)
   if (name === undefined) return fail('missing')
   return grandchild({ id: name })
 })
-const parent = flow<ParentFlow>(async ({ id }, _requirements, { child }) => child({ id }))
+const parent = brick<ParentBrick>(async ({ id }, _requirements, { child }) => child({ id }))
 
 const logger = {
   messages: [] as string[],
@@ -77,8 +77,8 @@ const logger = {
 }
 const repository = { find: (id: string) => (id === 'ada' ? 'Ada' : undefined) }
 
-describe('direct Flow execution', () => {
-  test('runs a plain Flow with the core local Worker by default', async () => {
+describe('direct Brick execution', () => {
+  test('runs a plain Brick with the core local Worker by default', async () => {
     await expect(Promise.resolve(plain.run({ value: 2 }))).resolves.toBe(4)
   })
 
@@ -89,7 +89,7 @@ describe('direct Flow execution', () => {
         {
           requirements: { repository, logger },
           dependencies: {
-            child: { flow: child, dependencies: { grandchild: { flow: grandchild } } }
+            child: { brick: child, dependencies: { grandchild: { brick: grandchild } } }
           }
         }
       )
@@ -99,25 +99,25 @@ describe('direct Flow execution', () => {
   })
 
   test('keeps equal transitive aliases independent in sibling branches', async () => {
-    interface RepositoryFlow extends Flow {
+    type RepositoryBrick = Brick<{
       params: undefined
       result: string
-    }
-    interface BranchFlow extends Flow {
+    }>
+    type BranchBrick = Brick<{
       params: undefined
       result: string
-      depends: { repository: RepositoryFlow }
-    }
-    interface RootFlow extends Flow {
+      depends: { repository: RepositoryBrick }
+    }>
+    type RootBrick = Brick<{
       params: undefined
       result: readonly [string, string]
-      depends: { primary: BranchFlow; secondary: BranchFlow }
-    }
+      depends: { primary: BranchBrick; secondary: BranchBrick }
+    }>
 
-    const branch = flow<BranchFlow>(async (_params, _requirements, dependencies) =>
+    const branch = brick<BranchBrick>(async (_params, _requirements, dependencies) =>
       dependencies.repository(undefined)
     )
-    const root = flow<RootFlow>(async (_params, _requirements, dependencies) =>
+    const root = brick<RootBrick>(async (_params, _requirements, dependencies) =>
       Promise.all([dependencies.primary(undefined), dependencies.secondary(undefined)])
     )
 
@@ -126,12 +126,12 @@ describe('direct Flow execution', () => {
         root.run(undefined, {
           dependencies: {
             primary: {
-              flow: branch,
-              dependencies: { repository: { flow: flow<RepositoryFlow>(() => 'primary') } }
+              brick: branch,
+              dependencies: { repository: { brick: brick<RepositoryBrick>(() => 'primary') } }
             },
             secondary: {
-              flow: branch,
-              dependencies: { repository: { flow: flow<RepositoryFlow>(() => 'secondary') } }
+              brick: branch,
+              dependencies: { repository: { brick: brick<RepositoryBrick>(() => 'secondary') } }
             }
           }
         })
@@ -140,37 +140,38 @@ describe('direct Flow execution', () => {
   })
 
   test('routes equal dependency signal names through exact recursive paths', async () => {
-    interface PrimaryFlow extends Flow {
+    type PrimaryBrick = Brick<{
       params: undefined
       result: string
       signals: { approve: { request: { primary: true }; response: string } }
-    }
-    interface SecondaryFlow extends Flow {
+    }>
+    type SecondaryBrick = Brick<{
       params: undefined
       result: number
       signals: { approve: { request: { secondary: true }; response: number } }
-    }
-    interface RootFlow extends Flow {
+    }>
+    type RootBrick = Brick<{
       params: undefined
       result: readonly [string, number]
-      depends: { primary: PrimaryFlow; secondary: SecondaryFlow }
-    }
+      depends: { primary: PrimaryBrick; secondary: SecondaryBrick }
+    }>
 
-    const primary = flow<PrimaryFlow>(async (_params, _requirements, _dependencies, { signals }) =>
-      signals.approve({ primary: true })
+    const primary = brick<PrimaryBrick>(
+      async (_params, _requirements, _dependencies, { signals }) =>
+        signals.approve({ primary: true })
     )
-    const secondary = flow<SecondaryFlow>(
+    const secondary = brick<SecondaryBrick>(
       async (_params, _requirements, _dependencies, { signals }) =>
         signals.approve({ secondary: true })
     )
-    const root = flow<RootFlow>(async (_params, _requirements, dependencies) =>
+    const root = brick<RootBrick>(async (_params, _requirements, dependencies) =>
       Promise.all([dependencies.primary(undefined), dependencies.secondary(undefined)])
     )
 
     await expect(
       Promise.resolve(
         root.run(undefined, {
-          dependencies: { primary: { flow: primary }, secondary: { flow: secondary } },
+          dependencies: { primary: { brick: primary }, secondary: { brick: secondary } },
           signals: {
             primary: { approve: ({ primary }) => (primary ? 'approved' : 'denied') },
             secondary: { approve: ({ secondary }) => (secondary ? 42 : 0) }
@@ -181,29 +182,29 @@ describe('direct Flow execution', () => {
   })
 
   test('does not resolve dependency signals by final name suffix', async () => {
-    interface ChildFlow extends Flow {
+    type ChildBrick = Brick<{
       params: undefined
       result: boolean
       signals: { approve: { request: undefined; response: boolean } }
-    }
-    interface RootFlow extends Flow {
+    }>
+    type RootBrick = Brick<{
       params: undefined
       result: boolean
       signals: { approve: { request: undefined; response: boolean } }
-      depends: { child: ChildFlow }
-    }
+      depends: { child: ChildBrick }
+    }>
 
-    const child = flow<ChildFlow>(async (_params, _requirements, _dependencies, { signals }) =>
+    const child = brick<ChildBrick>(async (_params, _requirements, _dependencies, { signals }) =>
       signals.approve(undefined)
     )
-    const root = flow<RootFlow>(async (_params, _requirements, dependencies) =>
+    const root = brick<RootBrick>(async (_params, _requirements, dependencies) =>
       dependencies.child(undefined)
     )
 
     await expect(
       Promise.resolve(
         root.run(undefined, {
-          dependencies: { child: { flow: child } },
+          dependencies: { child: { brick: child } },
           signals: { approve: () => true, child: { approve: () => false } }
         })
       )
@@ -211,26 +212,26 @@ describe('direct Flow execution', () => {
   })
 
   test('rejects dotted direct dependency aliases before path dispatch can collide', async () => {
-    interface LeafFlow extends Flow {
+    type LeafBrick = Brick<{
       params: undefined
       result: string
-    }
-    interface NestedFlow extends Flow {
+    }>
+    type NestedBrick = Brick<{
       params: undefined
       result: string
-      depends: { child: LeafFlow }
-    }
-    interface RootFlow extends Flow {
+      depends: { child: LeafBrick }
+    }>
+    type RootBrick = Brick<{
       params: undefined
       result: string
-      depends: { 'parent.child': LeafFlow; parent: NestedFlow }
-    }
+      depends: { 'parent.child': LeafBrick; parent: NestedBrick }
+    }>
 
-    const leaf = flow<LeafFlow>(() => 'leaf')
-    const nested = flow<NestedFlow>(async (_params, _requirements, dependencies) =>
+    const leaf = brick<LeafBrick>(() => 'leaf')
+    const nested = brick<NestedBrick>(async (_params, _requirements, dependencies) =>
       dependencies.child(undefined)
     )
-    const root = flow<RootFlow>((async (
+    const root = brick<RootBrick>((async (
       _params: undefined,
       _requirements: Empty,
       dependencies: { 'parent.child': (params: undefined) => Promise<string> }
@@ -238,8 +239,8 @@ describe('direct Flow execution', () => {
 
     const run = root.run(undefined, {
       dependencies: {
-        'parent.child': { flow: leaf },
-        parent: { flow: nested, dependencies: { child: { flow: leaf } } }
+        'parent.child': { brick: leaf },
+        parent: { brick: nested, dependencies: { child: { brick: leaf } } }
       }
     })
 
@@ -249,30 +250,30 @@ describe('direct Flow execution', () => {
   })
 
   test('rejects empty direct dependency aliases before root signal paths can collide', async () => {
-    interface ChildFlow extends Flow {
+    type ChildBrick = Brick<{
       params: undefined
       result: string
       signals: { approve: { request: undefined; response: string } }
-    }
-    interface RootFlow extends Flow {
+    }>
+    type RootBrick = Brick<{
       params: undefined
       result: string
       signals: { approve: { request: undefined; response: string } }
-      depends: { '': ChildFlow }
-    }
+      depends: { '': ChildBrick }
+    }>
 
     let rootSignalCalls = 0
-    const child = flow<ChildFlow>(async (_params, _requirements, _dependencies, { signals }) =>
+    const child = brick<ChildBrick>(async (_params, _requirements, _dependencies, { signals }) =>
       signals.approve(undefined)
     )
-    const root = flow<RootFlow>((async (
+    const root = brick<RootBrick>((async (
       _params: undefined,
       _requirements: Empty,
       dependencies: { '': (params: undefined) => Promise<string> }
     ) => dependencies[''](undefined)) as never)
 
     const run = root.run(undefined, {
-      dependencies: { '': { flow: child } },
+      dependencies: { '': { brick: child } },
       signals: {
         approve: () => {
           rootSignalCalls += 1
@@ -292,14 +293,14 @@ describe('direct Flow execution', () => {
         {
           requirements: { repository, logger },
           dependencies: {
-            child: { flow: child, dependencies: { grandchild: { flow: grandchild } } }
+            child: { brick: child, dependencies: { grandchild: { brick: grandchild } } }
           }
         }
       )
       .with('missing', () => 'anonymous')
     await expect(Promise.resolve(recovered)).resolves.toBe('anonymous')
 
-    const defective = flow<PlainFlow>(() => {
+    const defective = brick<PlainBrick>(() => {
       throw new Error('defect')
     })
     await expect(Promise.resolve(defective.run({ value: 1 }))).rejects.toThrow('defect')
@@ -328,7 +329,7 @@ describe('direct Flow execution', () => {
         {
           requirements: { repository, logger },
           dependencies: {
-            child: { flow: child, dependencies: { grandchild: { flow: grandchild } } }
+            child: { brick: child, dependencies: { grandchild: { brick: grandchild } } }
           },
           worker,
           id: 'custom-id',
@@ -341,11 +342,11 @@ describe('direct Flow execution', () => {
       id: 'custom-id',
       metadata: { tenant: 'acme' }
     })
-    expect(worker.requests[0]?.flowId).toBeUndefined()
+    expect(worker.requests[0]?.brickId).toBeUndefined()
   })
 })
 
-describe('Layer-bound Flow execution', () => {
+describe('Layer-bound Brick execution', () => {
   test('binds entries immutably and supports nested durable paths', async () => {
     const users = new Layer('users', { parent, child, grandchild }).provide({ repository, logger })
     const app = new Layer('app', { users })
@@ -355,13 +356,13 @@ describe('Layer-bound Flow execution', () => {
       .run({ id: 'ada' }, { worker })
       .with(P._, () => 'fallback')
       .then((value) => expect(value).toBe('hello Ada'))
-    expect(worker.requests[0]?.flowId).toBe('app.users.parent')
+    expect(worker.requests[0]?.brickId).toBe('app.users.parent')
     expect(users.parent).not.toBe(parent)
     expect(parent).toBe(parent)
     expect(Object.isFrozen(users.parent)).toBe(true)
   })
 
-  test('allows one Flow to be bound to different provider sets', async () => {
+  test('allows one Brick to be bound to different provider sets', async () => {
     const first = new Layer('first', { child, grandchild }).provide({
       repository: { find: () => 'First' },
       logger
@@ -382,125 +383,125 @@ describe('Layer-bound Flow execution', () => {
   })
 
   test('resolves transitive dependency aliases in each caller Layer scope', async () => {
-    interface RepositoryFlow extends Flow {
+    type RepositoryBrick = Brick<{
       params: undefined
       result: string
-    }
-    interface CheckoutFlow extends Flow {
+    }>
+    type CheckoutBrick = Brick<{
       params: undefined
       result: string
-      depends: { repository: RepositoryFlow }
-    }
-    interface PlaceOrderFlow extends Flow {
+      depends: { repository: RepositoryBrick }
+    }>
+    type PlaceOrderBrick = Brick<{
       params: undefined
       result: string
-      depends: { checkout: CheckoutFlow }
-    }
+      depends: { checkout: CheckoutBrick }
+    }>
 
-    const checkout = flow<CheckoutFlow>(async (_params, _requirements, dependencies) =>
+    const checkout = brick<CheckoutBrick>(async (_params, _requirements, dependencies) =>
       dependencies.repository(undefined)
     )
-    const placeOrder = flow<PlaceOrderFlow>(async (_params, _requirements, dependencies) =>
+    const placeOrder = brick<PlaceOrderBrick>(async (_params, _requirements, dependencies) =>
       dependencies.checkout(undefined)
     )
     const checkoutLayer = new Layer('checkout', {
       checkout,
-      repository: flow<RepositoryFlow>(() => 'checkout')
+      repository: brick<RepositoryBrick>(() => 'checkout')
     })
     const reportingLayer = new Layer('reporting', {
-      repository: flow<RepositoryFlow>(() => 'reporting')
+      repository: brick<RepositoryBrick>(() => 'reporting')
     })
     const app = new Layer('app', { placeOrder, checkout: checkoutLayer, reporting: reportingLayer })
 
     await expect(Promise.resolve(app.placeOrder.run(undefined))).resolves.toBe('checkout')
   })
 
-  test('resolves transitive Layer dependencies from a supplied Flow caller scope', async () => {
-    interface GrandchildFlow extends Flow {
+  test('resolves transitive Layer dependencies from a supplied Brick caller scope', async () => {
+    type GrandchildBrick = Brick<{
       params: undefined
       result: string
-    }
-    interface ChildFlow extends Flow {
+    }>
+    type ChildBrick = Brick<{
       params: undefined
       result: string
-      depends: { grandchild: GrandchildFlow }
-    }
-    interface ParentFlow extends Flow {
+      depends: { grandchild: GrandchildBrick }
+    }>
+    type ParentBrick = Brick<{
       params: undefined
       result: string
-      depends: { child: ChildFlow }
-    }
+      depends: { child: ChildBrick }
+    }>
 
-    const suppliedChild = flow<ChildFlow>(async (_params, _requirements, dependencies) =>
+    const suppliedChild = brick<ChildBrick>(async (_params, _requirements, dependencies) =>
       dependencies.grandchild(undefined)
     )
     const bound = new Layer('bound', {
-      parent: flow<ParentFlow>(async (_params, _requirements, dependencies) =>
+      parent: brick<ParentBrick>(async (_params, _requirements, dependencies) =>
         dependencies.child(undefined)
       ),
-      grandchild: flow<GrandchildFlow>(() => 'layer')
+      grandchild: brick<GrandchildBrick>(() => 'layer')
     })
 
     await expect(
       Promise.resolve(
-        bound.parent.run(undefined, { dependencies: { child: { flow: suppliedChild } } })
+        bound.parent.run(undefined, { dependencies: { child: { brick: suppliedChild } } })
       )
     ).resolves.toBe('layer')
   })
 
-  test('resolves a supplied Flow transitive dependency from its nested caller scope', async () => {
-    interface GrandchildFlow extends Flow {
+  test('resolves a supplied Brick transitive dependency from its nested caller scope', async () => {
+    type GrandchildBrick = Brick<{
       params: undefined
       result: string
-    }
-    interface ChildFlow extends Flow {
+    }>
+    type ChildBrick = Brick<{
       params: undefined
       result: string
-      depends: { grandchild: GrandchildFlow }
-    }
-    interface ParentFlow extends Flow {
+      depends: { grandchild: GrandchildBrick }
+    }>
+    type ParentBrick = Brick<{
       params: undefined
       result: string
-      depends: { child: ChildFlow }
-    }
+      depends: { child: ChildBrick }
+    }>
 
-    const suppliedChild = flow<ChildFlow>(async (_params, _requirements, dependencies) =>
+    const suppliedChild = brick<ChildBrick>(async (_params, _requirements, dependencies) =>
       dependencies.grandchild(undefined)
     )
     const nested = new Layer('nested', {
-      parent: flow<ParentFlow>(async (_params, _requirements, dependencies) =>
+      parent: brick<ParentBrick>(async (_params, _requirements, dependencies) =>
         dependencies.child(undefined)
       ),
-      grandchild: flow<GrandchildFlow>(() => 'nested')
+      grandchild: brick<GrandchildBrick>(() => 'nested')
     })
     const elsewhere = new Layer('elsewhere', {
-      grandchild: flow<GrandchildFlow>(() => 'elsewhere')
+      grandchild: brick<GrandchildBrick>(() => 'elsewhere')
     })
     const app = new Layer('app', { nested, elsewhere })
 
     await expect(
       Promise.resolve(
-        app.nested.parent.run(undefined, { dependencies: { child: { flow: suppliedChild } } })
+        app.nested.parent.run(undefined, { dependencies: { child: { brick: suppliedChild } } })
       )
     ).resolves.toBe('nested')
   })
 
   test('requires and routes only the selected Layer dependency signal namespace', async () => {
-    interface ChildFlow extends Flow {
+    type ChildBrick = Brick<{
       params: undefined
       result: string
       signals: { approve: { request: undefined; response: string } }
-    }
-    interface ParentFlow extends Flow {
+    }>
+    type ParentBrick = Brick<{
       params: undefined
       result: string
-      depends: { child: ChildFlow }
-    }
+      depends: { child: ChildBrick }
+    }>
 
-    const child = flow<ChildFlow>(async (_params, _requirements, _dependencies, { signals }) =>
+    const child = brick<ChildBrick>(async (_params, _requirements, _dependencies, { signals }) =>
       signals.approve(undefined)
     )
-    const parent = flow<ParentFlow>(async (_params, _requirements, dependencies) =>
+    const parent = brick<ParentBrick>(async (_params, _requirements, dependencies) =>
       dependencies.child(undefined)
     )
     const app = new Layer('app', {
@@ -519,21 +520,21 @@ describe('Layer-bound Flow execution', () => {
   })
 
   test('uses nested Layer IDs rather than entry keys for selected signal paths', async () => {
-    interface ChildFlow extends Flow {
+    type ChildBrick = Brick<{
       params: undefined
       result: string
       signals: { approve: { request: undefined; response: string } }
-    }
-    interface ParentFlow extends Flow {
+    }>
+    type ParentBrick = Brick<{
       params: undefined
       result: string
-      depends: { child: ChildFlow }
-    }
+      depends: { child: ChildBrick }
+    }>
 
-    const child = flow<ChildFlow>(async (_params, _requirements, _dependencies, { signals }) =>
+    const child = brick<ChildBrick>(async (_params, _requirements, _dependencies, { signals }) =>
       signals.approve(undefined)
     )
-    const parent = flow<ParentFlow>(async (_params, _requirements, dependencies) =>
+    const parent = brick<ParentBrick>(async (_params, _requirements, dependencies) =>
       dependencies.child(undefined)
     )
     const app = new Layer('app', {
@@ -551,43 +552,43 @@ describe('Layer-bound Flow execution', () => {
   })
 
   test('splits supplied own signals from Layer-resolved descendant signals', async () => {
-    interface LeafFlow extends Flow {
+    type LeafBrick = Brick<{
       params: undefined
       result: string
       signals: { read: { request: undefined; response: string } }
-    }
-    interface GrandchildFlow extends Flow {
+    }>
+    type GrandchildBrick = Brick<{
       params: undefined
       result: string
-      depends: { leaf: LeafFlow }
+      depends: { leaf: LeafBrick }
       signals: { refresh: { request: undefined; response: boolean } }
-    }
-    interface ChildFlow extends Flow {
+    }>
+    type ChildBrick = Brick<{
       params: undefined
       result: string
-      depends: { grandchild: GrandchildFlow }
+      depends: { grandchild: GrandchildBrick }
       signals: { approve: { request: undefined; response: boolean } }
-    }
-    interface ParentFlow extends Flow {
+    }>
+    type ParentBrick = Brick<{
       params: undefined
       result: string
-      depends: { child: ChildFlow }
-    }
+      depends: { child: ChildBrick }
+    }>
 
-    const leaf = flow<LeafFlow>(async (_params, _requirements, _dependencies, { signals }) =>
+    const leaf = brick<LeafBrick>(async (_params, _requirements, _dependencies, { signals }) =>
       signals.read(undefined)
     )
-    const grandchild = flow<GrandchildFlow>(
+    const grandchild = brick<GrandchildBrick>(
       async (_params, _requirements, dependencies, { signals }) => {
         await signals.refresh(undefined)
         return dependencies.leaf(undefined)
       }
     )
-    const child = flow<ChildFlow>(async (_params, _requirements, dependencies, { signals }) => {
+    const child = brick<ChildBrick>(async (_params, _requirements, dependencies, { signals }) => {
       await signals.approve(undefined)
       return dependencies.grandchild(undefined)
     })
-    const parent = flow<ParentFlow>(async (_params, _requirements, dependencies) =>
+    const parent = brick<ParentBrick>(async (_params, _requirements, dependencies) =>
       dependencies.child(undefined)
     )
     const app = new Layer('app', { parent, grandchild })
@@ -597,9 +598,9 @@ describe('Layer-bound Flow execution', () => {
         app.parent.run(undefined, {
           dependencies: {
             child: {
-              flow: child,
+              brick: child,
               dependencies: {
-                grandchild: { dependencies: { leaf: { flow: leaf } } }
+                grandchild: { dependencies: { leaf: { brick: leaf } } }
               }
             }
           },
@@ -616,25 +617,25 @@ describe('Layer-bound Flow execution', () => {
   })
 
   test('keeps unresolved descendants independent under selected sibling branches', async () => {
-    interface RepositoryFlow extends Flow {
+    type RepositoryBrick = Brick<{
       params: undefined
       result: string
-    }
-    interface BranchFlow extends Flow {
+    }>
+    type BranchBrick = Brick<{
       params: undefined
       result: string
-      depends: { repository: RepositoryFlow }
-    }
-    interface ParentFlow extends Flow {
+      depends: { repository: RepositoryBrick }
+    }>
+    type ParentBrick = Brick<{
       params: undefined
       result: readonly [string, string]
-      depends: { primary: BranchFlow; secondary: BranchFlow }
-    }
+      depends: { primary: BranchBrick; secondary: BranchBrick }
+    }>
 
-    const branch = flow<BranchFlow>(async (_params, _requirements, dependencies) =>
+    const branch = brick<BranchBrick>(async (_params, _requirements, dependencies) =>
       dependencies.repository(undefined)
     )
-    const parent = flow<ParentFlow>(async (_params, _requirements, dependencies) =>
+    const parent = brick<ParentBrick>(async (_params, _requirements, dependencies) =>
       Promise.all([dependencies.primary(undefined), dependencies.secondary(undefined)])
     )
     const app = new Layer('app', {
@@ -648,10 +649,10 @@ describe('Layer-bound Flow execution', () => {
         app.parent.run(undefined, {
           dependencies: {
             primary: {
-              dependencies: { repository: { flow: flow<RepositoryFlow>(() => 'primary') } }
+              dependencies: { repository: { brick: brick<RepositoryBrick>(() => 'primary') } }
             },
             secondary: {
-              dependencies: { repository: { flow: flow<RepositoryFlow>(() => 'secondary') } }
+              dependencies: { repository: { brick: brick<RepositoryBrick>(() => 'secondary') } }
             }
           }
         })
@@ -660,35 +661,35 @@ describe('Layer-bound Flow execution', () => {
   })
 
   test('uses a supplied dependency when transitive global Layer matches are ambiguous', async () => {
-    interface RepositoryFlow extends Flow {
+    type RepositoryBrick = Brick<{
       params: undefined
       result: string
-    }
-    interface CheckoutFlow extends Flow {
+    }>
+    type CheckoutBrick = Brick<{
       params: undefined
       result: string
-      depends: { repository: RepositoryFlow }
-    }
-    interface PlaceOrderFlow extends Flow {
+      depends: { repository: RepositoryBrick }
+    }>
+    type PlaceOrderBrick = Brick<{
       params: undefined
       result: string
-      depends: { checkout: CheckoutFlow }
-    }
+      depends: { checkout: CheckoutBrick }
+    }>
 
-    const checkout = flow<CheckoutFlow>(async (_params, _requirements, dependencies) =>
+    const checkout = brick<CheckoutBrick>(async (_params, _requirements, dependencies) =>
       dependencies.repository(undefined)
     )
-    const placeOrder = flow<PlaceOrderFlow>(async (_params, _requirements, dependencies) =>
+    const placeOrder = brick<PlaceOrderBrick>(async (_params, _requirements, dependencies) =>
       dependencies.checkout(undefined)
     )
     const checkoutLayer = new Layer('checkout', { checkout })
     const reportingLayer = new Layer('reporting', {
-      repository: flow<RepositoryFlow>(() => 'reporting')
+      repository: brick<RepositoryBrick>(() => 'reporting')
     })
     const inventoryLayer = new Layer('inventory', {
-      repository: flow<RepositoryFlow>(() => 'inventory')
+      repository: brick<RepositoryBrick>(() => 'inventory')
     })
-    const suppliedRepository = flow<RepositoryFlow>(() => 'supplied')
+    const suppliedRepository = brick<RepositoryBrick>(() => 'supplied')
     const app = new Layer('app', {
       placeOrder,
       checkout: checkoutLayer,
@@ -700,7 +701,7 @@ describe('Layer-bound Flow execution', () => {
       Promise.resolve(
         app.placeOrder.run(undefined, {
           dependencies: {
-            checkout: { dependencies: { repository: { flow: suppliedRepository } } }
+            checkout: { dependencies: { repository: { brick: suppliedRepository } } }
           }
         })
       )
@@ -708,21 +709,21 @@ describe('Layer-bound Flow execution', () => {
   })
 
   test('resolves signals for a supplied-only dependency without an empty Layer namespace', async () => {
-    interface SignalledChildFlow extends Flow {
+    type SignalledChildBrick = Brick<{
       params: { id: string }
       result: boolean
       signals: { approve: { request: { id: string }; response: boolean } }
-    }
-    interface SignalledParentFlow extends Flow {
+    }>
+    type SignalledParentBrick = Brick<{
       params: { id: string }
       result: boolean
-      depends: { child: SignalledChildFlow }
-    }
+      depends: { child: SignalledChildBrick }
+    }>
 
-    const signalledChild = flow<SignalledChildFlow>(
+    const signalledChild = brick<SignalledChildBrick>(
       async ({ id }, _requirements, _dependencies, { signals }) => signals.approve({ id })
     )
-    const signalledParent = flow<SignalledParentFlow>(async ({ id }, _requirements, { child }) =>
+    const signalledParent = brick<SignalledParentBrick>(async ({ id }, _requirements, { child }) =>
       child({ id })
     )
     const app = new Layer('app', { parent: signalledParent })
@@ -732,7 +733,7 @@ describe('Layer-bound Flow execution', () => {
         app.parent.run(
           { id: 'ada' },
           {
-            dependencies: { child: { flow: signalledChild } },
+            dependencies: { child: { brick: signalledChild } },
             signals: { child: { approve: ({ id }) => id === 'ada' } }
           }
         )
@@ -741,30 +742,30 @@ describe('Layer-bound Flow execution', () => {
   })
 
   test('uses only selected Layer signal branches when an ambiguous dependency is supplied', async () => {
-    interface RepositoryFlow extends Flow {
+    type RepositoryBrick = Brick<{
       params: undefined
       result: string
       signals: { refresh: { request: undefined; response: string } }
-    }
-    interface CheckoutFlow extends Flow {
+    }>
+    type CheckoutBrick = Brick<{
       params: undefined
       result: string
-      depends: { repository: RepositoryFlow }
-    }
-    interface PlaceOrderFlow extends Flow {
+      depends: { repository: RepositoryBrick }
+    }>
+    type PlaceOrderBrick = Brick<{
       params: undefined
       result: string
-      depends: { checkout: CheckoutFlow }
-    }
+      depends: { checkout: CheckoutBrick }
+    }>
 
-    const checkout = flow<CheckoutFlow>(async (_params, _requirements, dependencies) =>
+    const checkout = brick<CheckoutBrick>(async (_params, _requirements, dependencies) =>
       dependencies.repository(undefined)
     )
-    const placeOrder = flow<PlaceOrderFlow>(async (_params, _requirements, dependencies) =>
+    const placeOrder = brick<PlaceOrderBrick>(async (_params, _requirements, dependencies) =>
       dependencies.checkout(undefined)
     )
     const repository = (_value: string) =>
-      flow<RepositoryFlow>(async (_params, _requirements, _dependencies, { signals }) =>
+      brick<RepositoryBrick>(async (_params, _requirements, _dependencies, { signals }) =>
         signals.refresh(undefined)
       )
     const app = new Layer('app', {
@@ -779,7 +780,7 @@ describe('Layer-bound Flow execution', () => {
         app.placeOrder.run(undefined, {
           dependencies: {
             checkout: {
-              dependencies: { repository: { flow: repository('supplied') } }
+              dependencies: { repository: { brick: repository('supplied') } }
             }
           },
           signals: { checkout: { repository: { refresh: () => 'selected' } } }
@@ -789,29 +790,29 @@ describe('Layer-bound Flow execution', () => {
   })
 
   test('uses exact absolute paths for fully Layer-resolved transitive signals', async () => {
-    interface RepositoryFlow extends Flow {
+    type RepositoryBrick = Brick<{
       params: undefined
       result: string
       signals: { refresh: { request: undefined; response: string } }
-    }
-    interface CheckoutFlow extends Flow {
+    }>
+    type CheckoutBrick = Brick<{
       params: undefined
       result: string
-      depends: { repository: RepositoryFlow }
-    }
-    interface PlaceOrderFlow extends Flow {
+      depends: { repository: RepositoryBrick }
+    }>
+    type PlaceOrderBrick = Brick<{
       params: undefined
       result: string
-      depends: { checkout: CheckoutFlow }
-    }
+      depends: { checkout: CheckoutBrick }
+    }>
 
-    const repository = flow<RepositoryFlow>(
+    const repository = brick<RepositoryBrick>(
       async (_params, _requirements, _dependencies, { signals }) => signals.refresh(undefined)
     )
-    const checkout = flow<CheckoutFlow>(async (_params, _requirements, dependencies) =>
+    const checkout = brick<CheckoutBrick>(async (_params, _requirements, dependencies) =>
       dependencies.repository(undefined)
     )
-    const placeOrder = flow<PlaceOrderFlow>(async (_params, _requirements, dependencies) =>
+    const placeOrder = brick<PlaceOrderBrick>(async (_params, _requirements, dependencies) =>
       dependencies.checkout(undefined)
     )
     const app = new Layer('app', {
@@ -829,29 +830,29 @@ describe('Layer-bound Flow execution', () => {
   })
 
   test('local signal overrides follow Layer-resolved callee paths', async () => {
-    interface RepositoryFlow extends Flow {
+    type RepositoryBrick = Brick<{
       params: undefined
       result: string
       signals: { refresh: { request: undefined; response: string } }
-    }
-    interface CheckoutFlow extends Flow {
+    }>
+    type CheckoutBrick = Brick<{
       params: undefined
       result: string
-      depends: { repository: RepositoryFlow }
-    }
-    interface PlaceOrderFlow extends Flow {
+      depends: { repository: RepositoryBrick }
+    }>
+    type PlaceOrderBrick = Brick<{
       params: undefined
       result: string
-      depends: { checkout: CheckoutFlow }
-    }
+      depends: { checkout: CheckoutBrick }
+    }>
 
-    const repository = flow<RepositoryFlow>(
+    const repository = brick<RepositoryBrick>(
       async (_params, _requirements, _dependencies, { signals }) => signals.refresh(undefined)
     )
-    const suppliedCheckout = flow<CheckoutFlow>(async (_params, _requirements, dependencies) =>
+    const suppliedCheckout = brick<CheckoutBrick>(async (_params, _requirements, dependencies) =>
       dependencies.repository(undefined, { signals: { refresh: () => 'local' } })
     )
-    const placeOrder = flow<PlaceOrderFlow>(async (_params, _requirements, dependencies) =>
+    const placeOrder = brick<PlaceOrderBrick>(async (_params, _requirements, dependencies) =>
       dependencies.checkout(undefined)
     )
     const app = new Layer('app', {
@@ -862,7 +863,7 @@ describe('Layer-bound Flow execution', () => {
     await expect(
       Promise.resolve(
         app.placeOrder.run(undefined, {
-          dependencies: { checkout: { flow: suppliedCheckout } },
+          dependencies: { checkout: { brick: suppliedCheckout } },
           signals: { app: { checkout: { repository: { refresh: () => 'boundary' } } } }
         })
       )
@@ -870,32 +871,32 @@ describe('Layer-bound Flow execution', () => {
   })
 
   test('rejects dotted and empty local signal overrides before descendant interception', async () => {
-    interface LeafFlow extends Flow {
+    type LeafBrick = Brick<{
       params: undefined
       result: string
       signals: { approve: { request: undefined; response: string } }
-    }
-    interface ChildFlow extends Flow {
+    }>
+    type ChildBrick = Brick<{
       params: undefined
       result: string
-      depends: { leaf: LeafFlow }
-    }
-    interface RootFlow extends Flow {
+      depends: { leaf: LeafBrick }
+    }>
+    type RootBrick = Brick<{
       params: undefined
       result: string
-      depends: { child: ChildFlow }
-    }
+      depends: { child: ChildBrick }
+    }>
 
     let descendantCalls = 0
-    const leaf = flow<LeafFlow>(async (_params, _requirements, _dependencies, { signals }) =>
+    const leaf = brick<LeafBrick>(async (_params, _requirements, _dependencies, { signals }) =>
       signals.approve(undefined)
     )
-    const child = flow<ChildFlow>(async (_params, _requirements, dependencies) =>
+    const child = brick<ChildBrick>(async (_params, _requirements, dependencies) =>
       dependencies.leaf(undefined)
     )
 
     for (const invalid of ['leaf.approve', '']) {
-      const root = flow<RootFlow>(async (_params, _requirements, dependencies) =>
+      const root = brick<RootBrick>(async (_params, _requirements, dependencies) =>
         dependencies.child(undefined, {
           signals: {
             [invalid]: () => {
@@ -908,7 +909,7 @@ describe('Layer-bound Flow execution', () => {
 
       const run = root.run(undefined, {
         dependencies: {
-          child: { flow: child, dependencies: { leaf: { flow: leaf } } }
+          child: { brick: child, dependencies: { leaf: { brick: leaf } } }
         },
         signals: {
           child: {
@@ -928,50 +929,50 @@ describe('Layer-bound Flow execution', () => {
   })
 
   test('rejects empty bound dependency aliases before path collisions', async () => {
-    interface LeafFlow extends Flow {
+    type LeafBrick = Brick<{
       params: undefined
       result: string
-    }
-    interface RootFlow extends Flow {
+    }>
+    type RootBrick = Brick<{
       params: undefined
       result: string
-      depends: { '': LeafFlow }
-    }
+      depends: { '': LeafBrick }
+    }>
 
-    const leaf = flow<LeafFlow>(() => 'leaf')
-    const root = flow<RootFlow>((async (
+    const leaf = brick<LeafBrick>(() => 'leaf')
+    const root = brick<RootBrick>((async (
       _params: undefined,
       _requirements: Empty,
       dependencies: { '': (params: undefined) => Promise<string> }
     ) => dependencies[''](undefined)) as never)
     const app = new Layer('app', { root })
     const run = app.root.run(undefined, {
-      dependencies: { '': { flow: leaf } }
+      dependencies: { '': { brick: leaf } }
     } as never)
 
     await expect(Promise.resolve(run)).rejects.toThrow(/invalid path segment.*must not be empty/i)
   })
 
   test('rejects dotted bound dependency aliases before nested paths can collide', async () => {
-    interface LeafFlow extends Flow {
+    type LeafBrick = Brick<{
       params: undefined
       result: string
-    }
-    interface RootFlow extends Flow {
+    }>
+    type RootBrick = Brick<{
       params: undefined
       result: string
-      depends: { 'parent.child': LeafFlow }
-    }
+      depends: { 'parent.child': LeafBrick }
+    }>
 
-    const leaf = flow<LeafFlow>(() => 'leaf')
-    const root = flow<RootFlow>((async (
+    const leaf = brick<LeafBrick>(() => 'leaf')
+    const root = brick<RootBrick>((async (
       _params: undefined,
       _requirements: Empty,
       dependencies: { 'parent.child': (params: undefined) => Promise<string> }
     ) => dependencies['parent.child'](undefined)) as never)
     const app = new Layer('app', { root })
     const run = app.root.run(undefined, {
-      dependencies: { 'parent.child': { flow: leaf } }
+      dependencies: { 'parent.child': { brick: leaf } }
     })
 
     await expect(Promise.resolve(run)).rejects.toThrow(
@@ -980,13 +981,13 @@ describe('Layer-bound Flow execution', () => {
   })
 
   test('rejects empty signal names before namespaced dispatch can collide', async () => {
-    interface SignalledFlow extends Flow {
+    type SignalledBrick = Brick<{
       params: undefined
       result: string
       signals: { '': { request: undefined; response: string } }
-    }
+    }>
 
-    const signalled = flow<SignalledFlow>((async (
+    const signalled = brick<SignalledBrick>((async (
       _params: undefined,
       _requirements: Empty,
       _dependencies: Empty,
@@ -1000,13 +1001,13 @@ describe('Layer-bound Flow execution', () => {
   })
 
   test('rejects dotted signal names before namespaced dispatch can collide', async () => {
-    interface SignalledFlow extends Flow {
+    type SignalledBrick = Brick<{
       params: undefined
       result: string
       signals: { 'status.refresh': { request: undefined; response: string } }
-    }
+    }>
 
-    const signalled = flow<SignalledFlow>((async (
+    const signalled = brick<SignalledBrick>((async (
       _params: undefined,
       _requirements: Empty,
       _dependencies: Empty,
@@ -1020,7 +1021,7 @@ describe('Layer-bound Flow execution', () => {
   })
 
   test('accepts unresolved dependency aliases and gives scoped Layer entries precedence', async () => {
-    const layerChild = flow<ChildFlow>(async ({ id }, { repository }, { grandchild }) =>
+    const layerChild = brick<ChildBrick>(async ({ id }, { repository }, { grandchild }) =>
       grandchild({ id: `layer-${repository.find(id)}` })
     )
     const bound = new Layer('bound', { parent, child: layerChild }).provide({ repository, logger })
@@ -1028,7 +1029,7 @@ describe('Layer-bound Flow execution', () => {
     await bound.parent
       .run(
         { id: 'ada' },
-        { dependencies: { child: { dependencies: { grandchild: { flow: grandchild } } } } }
+        { dependencies: { child: { dependencies: { grandchild: { brick: grandchild } } } } }
       )
       .with(P._, () => 'fallback')
       .then((value) => expect(value).toBe('hello layer-Ada'))
@@ -1152,12 +1153,12 @@ describe('core local Worker behavior', () => {
   })
 
   test('delegates boundary signals', async () => {
-    interface SignalledFlow extends Flow {
+    type SignalledBrick = Brick<{
       params: { id: string }
       result: boolean
       signals: { approve: { request: { id: string }; response: boolean } }
-    }
-    const signalled = flow<SignalledFlow>(async ({ id }, _r, _d, { signals }) =>
+    }>
+    const signalled = brick<SignalledBrick>(async ({ id }, _r, _d, { signals }) =>
       signals.approve({ id })
     )
 

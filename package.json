@@ -1,5 +1,5 @@
 {
-  "name": "flow-monorepo",
+  "name": "brickflow-monorepo",
   "private": true,
   "type": "module",
   "packageManager": "bun@1.3.14",

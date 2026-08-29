@@ -1,4 +1,4 @@
-import { isFlowImplementation } from '../flow/implementation'
+import { isBrickImplementation } from '../brick/implementation'
 import type { AnyLayer, FlattenedLayerEntry } from './types'
 
 export function isLayer(value: unknown): value is AnyLayer {
@@ -18,10 +18,10 @@ export function flattenLayer(layer: AnyLayer): readonly FlattenedLayerEntry[] {
     active.add(current)
 
     for (const [key, entry] of Object.entries(current.entries)) {
-      if (isFlowImplementation(entry)) {
+      if (isBrickImplementation(entry)) {
         const id = [...path, key].join('.')
         if (durableIds.has(id)) {
-          throw new Error(`Duplicate durable Flow ID: ${id}`)
+          throw new Error(`Duplicate durable Brick ID: ${id}`)
         }
         durableIds.add(id)
         flattened.push(
@@ -71,7 +71,7 @@ export function findLayerDependency(
 
   if (matches.length > 1) {
     throw new Error(
-      `Ambiguous dependency Flow entry "${alias}" resolved to multiple durable paths: ${matches
+      `Ambiguous dependency Brick entry "${alias}" resolved to multiple durable paths: ${matches
         .map(({ id }) => id)
         .join(', ')}`
     )
@@ -85,7 +85,7 @@ export function resolveLayerDependency(
   alias: string
 ): FlattenedLayerEntry {
   const match = findLayerDependency(layer, caller, alias)
-  if (!match) throw new Error(`Missing dependency Flow entry "${alias}" in the configured Layer`)
+  if (!match) throw new Error(`Missing dependency Brick entry "${alias}" in the configured Layer`)
   return match
 }
 

@@ -1,15 +1,15 @@
 {
-  "name": "@flow-example/basic",
+  "name": "@brickflow-example/basic",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --target bun --format esm --external @flow/*",
+    "build": "bun build ./src/index.ts --outdir ./dist --target bun --format esm --external @brickflow/*",
     "start": "bun run src/index.ts",
     "test": "bun test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@flow/core": "workspace:*"
+    "@brickflow/core": "workspace:*"
   }
 }

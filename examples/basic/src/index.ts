@@ -1,4 +1,4 @@
-import { type Flow, flow, Layer } from '@flow/core'
+import { type Brick, brick, Layer } from '@brickflow/core'
 
 interface User {
   readonly id: string
@@ -9,44 +9,44 @@ interface UserRepository {
   find(id: string): Promise<User | undefined>
 }
 
-export interface GetUserFlow extends Flow {
+export type GetUserBrick = Brick<{
   params: { id: string }
   result: User
   errors: 'user-not-found'
   requires: { userRepository: UserRepository }
-}
+}>
 
-export const getUser = flow<GetUserFlow>(
+export const getUser = brick<GetUserBrick>(
   async ({ id }, { userRepository }, _dependencies, { fail }) => {
     const user = await userRepository.find(id)
     return user ?? fail('user-not-found')
   }
 )
 
-export interface GetGreetingFlow extends Flow {
+export type GetGreetingBrick = Brick<{
   params: { id: string }
   result: { message: string }
-  depends: { getUser: GetUserFlow }
-}
+  depends: { getUser: GetUserBrick }
+}>
 
-export const getGreeting = flow<GetGreetingFlow>(async ({ id }, _requirements, { getUser }) => {
+export const getGreeting = brick<GetGreetingBrick>(async ({ id }, _requirements, { getUser }) => {
   const user = await getUser({ id })
   return { message: `Hello, ${user.name}!` }
 })
 
-export interface ApproveGreetingFlow extends Flow {
+export type ApproveGreetingBrick = Brick<{
   params: { id: string }
   result: { message: string; approved: boolean }
-  depends: { getGreeting: GetGreetingFlow }
+  depends: { getGreeting: GetGreetingBrick }
   signals: {
     approve: {
       request: { message: string }
       response: { approved: boolean }
     }
   }
-}
+}>
 
-export const approveGreeting = flow<ApproveGreetingFlow>(
+export const approveGreeting = brick<ApproveGreetingBrick>(
   async ({ id }, _requirements, { getGreeting }, { signals }) => {
     const greeting = await getGreeting({ id })
     const approval = await signals.approve(greeting)

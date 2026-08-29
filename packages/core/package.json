@@ -1,5 +1,5 @@
 {
-  "name": "@flow/core",
+  "name": "@brickflow/core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
     }
   },
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --target bun --format esm --external @flow/*",
+    "build": "bun build ./src/index.ts --outdir ./dist --target bun --format esm --external @brickflow/*",
     "test": "bun test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

@@ -1,14 +1,14 @@
 import { describe, expect, test } from 'bun:test'
-import { type Flow, flow, Layer } from '../src/index'
+import { type Brick, brick, Layer } from '../src/index'
 import { flattenLayer, lookupLayer } from '../src/layer/composition'
 
-interface GetUserFlow extends Flow {
+type GetUserBrick = Brick<{
   params: { id: string }
   result: { id: string }
   requires: { database: { find(id: string): string }; logger: { log(message: string): void } }
-}
+}>
 
-const getUser = flow<GetUserFlow>(({ id }) => ({ id }))
+const getUser = brick<GetUserBrick>(({ id }) => ({ id }))
 
 describe('Layer', () => {
   test('exposes immutable entries directly and stable nested durable IDs', () => {
@@ -65,13 +65,13 @@ describe('Layer', () => {
   })
 
   test('preserves prototype-named providers through nested provide and override', async () => {
-    interface PrototypeProvidersFlow extends Flow {
+    type PrototypeProvidersBrick = Brick<{
       params: undefined
       result: readonly [unknown, unknown, unknown]
       requires: { __proto__: unknown; constructor: unknown; prototype: unknown }
-    }
+    }>
 
-    const inspectProviders = flow<PrototypeProvidersFlow>(
+    const inspectProviders = brick<PrototypeProvidersBrick>(
       (_params, { __proto__: proto, constructor: constructorProvider, prototype }) => [
         proto,
         constructorProvider,
@@ -108,13 +108,13 @@ describe('Layer', () => {
   })
 
   test('detects conflicting nested prototype-named providers', () => {
-    interface PrototypeProviderFlow extends Flow {
+    type PrototypeProviderBrick = Brick<{
       params: undefined
       result: unknown
       requires: { __proto__: unknown }
-    }
+    }>
 
-    const readPrototype = flow<PrototypeProviderFlow>((_params, providers) => providers.__proto__)
+    const readPrototype = brick<PrototypeProviderBrick>((_params, providers) => providers.__proto__)
     const first = new Layer('first', { readPrototype }).provide({
       ['__proto__']: { source: 'first' }
     })
@@ -129,13 +129,13 @@ describe('Layer', () => {
   })
 
   test('overrides nested effective providers at the outer layer without mutation', async () => {
-    interface ReadUserFlow extends Flow {
+    type ReadUserBrick = Brick<{
       params: { id: string }
       result: string
       requires: { repository: { get(id: string): string } }
-    }
+    }>
 
-    const readUser = flow<ReadUserFlow>(({ id }, { repository }) => repository.get(id))
+    const readUser = brick<ReadUserBrick>(({ id }, { repository }) => repository.get(id))
     const postgres = { get: (id: string) => `postgres-${id}` }
     const memory = { get: (id: string) => `memory-${id}` }
     const users = new Layer('users', { readUser }).provide({ repository: postgres })
@@ -150,13 +150,13 @@ describe('Layer', () => {
   })
 
   test('outer overrides resolve conflicting nested providers without mutating originals', async () => {
-    interface ReadUserFlow extends Flow {
+    type ReadUserBrick = Brick<{
       params: { id: string }
       result: string
       requires: { repository: { get(id: string): string } }
-    }
+    }>
 
-    const readUser = flow<ReadUserFlow>(({ id }, { repository }) => repository.get(id))
+    const readUser = brick<ReadUserBrick>(({ id }, { repository }) => repository.get(id))
     const firstRepository = { get: (id: string) => `first-${id}` }
     const secondRepository = { get: (id: string) => `second-${id}` }
     const replacement = { get: (id: string) => `replacement-${id}` }
@@ -216,7 +216,7 @@ describe('Layer', () => {
     const second = new Layer('users', { getUser })
 
     expect(() => new Layer('application', { first, second })).toThrow(
-      /duplicate durable flow id.*application\.users\.getUser/i
+      /duplicate durable brick id.*application\.users\.getUser/i
     )
   })
 

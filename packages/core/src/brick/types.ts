@@ -6,43 +6,44 @@ import type {
   SignalFunctions
 } from '../signal/types'
 import type { Worker } from '../worker/contract'
-import type { FlowRun, RunMetadata } from '../worker/types'
-import type { Flow } from './contract'
+import type { BrickRun, RunMetadata } from '../worker/types'
+import type { Brick } from './contract'
 
 type Empty = Record<never, never>
 
 type DeclaredProperty<F, Key extends PropertyKey, Default> =
   F extends Record<Key, infer Value> ? Value : Default
 
-export type ParamsOf<F extends Flow> = F['params']
-export type ResultOf<F extends Flow> = F['result']
-export type ErrorsOf<F extends Flow> = DeclaredProperty<F, 'errors', never>
-export type RequirementsOf<F extends Flow> =
+export type ParamsOf<F extends Brick> = F['params']
+export type ResultOf<F extends Brick> = F['result']
+export type ErrorsOf<F extends Brick> = DeclaredProperty<F, 'errors', never>
+export type RequirementsOf<F extends Brick> =
   DeclaredProperty<F, 'requires', Empty> extends object
     ? DeclaredProperty<F, 'requires', Empty>
     : Empty
-export type DependenciesOf<F extends Flow> =
+export type DependenciesOf<F extends Brick> =
   DeclaredProperty<F, 'depends', Empty> extends object
     ? DeclaredProperty<F, 'depends', Empty>
     : Empty
-export type SignalsOf<F extends Flow> =
+export type SignalsOf<F extends Brick> =
   DeclaredProperty<F, 'signals', Empty> extends object
     ? DeclaredProperty<F, 'signals', Empty>
     : Empty
 
-export type ValidFlow<F extends Flow> =
+export type ValidBrick<F extends Brick> =
   HasValidPathSegmentKeys<DependenciesOf<F>> extends true
     ? HasValidPathSegmentKeys<SignalsOf<F>> extends true
       ? F
       : never
     : never
 
-export type FlowOf<Implementation> = Implementation extends FlowImplementation<infer F> ? F : never
+export type BrickOf<Implementation> =
+  Implementation extends BrickImplementation<infer F> ? F : never
 
-// biome-ignore lint/suspicious/noExplicitAny: heterogeneous Flow implementations are intentionally erased at graph boundaries
-export type AnyFlowImplementation = FlowImplementation<any>
+// biome-ignore lint/suspicious/noExplicitAny: heterogeneous Brick implementations are intentionally erased at graph boundaries
+export type AnyBrickImplementation = BrickImplementation<any>
 
-type DependencyFlow<Value> = Value extends Flow ? Value : never
+type DependencyBrick<Value> = Value extends Brick ? Value : never
 
 type UnionToIntersection<Value> = (Value extends Value ? (value: Value) => void : never) extends (
   value: infer Intersection
@@ -50,121 +51,124 @@ type UnionToIntersection<Value> = (Value extends Value ? (value: Value) => void 
   ? Intersection
   : never
 
-type EffectiveErrorsFromDependencies<F extends Flow, Depth extends readonly unknown[]> = {
-  [Key in keyof DependenciesOf<F>]: EffectiveErrorsOf<DependencyFlow<DependenciesOf<F>[Key]>, Depth>
+type EffectiveErrorsFromDependencies<F extends Brick, Depth extends readonly unknown[]> = {
+  [Key in keyof DependenciesOf<F>]: EffectiveErrorsOf<
+    DependencyBrick<DependenciesOf<F>[Key]>,
+    Depth
+  >
 }[keyof DependenciesOf<F>]
 
 type EffectiveRequirementsFromDependencies<
-  F extends Flow,
+  F extends Brick,
   Depth extends readonly unknown[]
 > = UnionToIntersection<
   {
     [Key in keyof DependenciesOf<F>]: EffectiveRequirementsOf<
-      DependencyFlow<DependenciesOf<F>[Key]>,
+      DependencyBrick<DependenciesOf<F>[Key]>,
       Depth
     >
   }[keyof DependenciesOf<F>]
 >
 
 type EffectiveDependenciesFromDependencies<
-  F extends Flow,
+  F extends Brick,
   Depth extends readonly unknown[]
 > = UnionToIntersection<
   {
     [Key in keyof DependenciesOf<F>]: EffectiveDependenciesOf<
-      DependencyFlow<DependenciesOf<F>[Key]>,
+      DependencyBrick<DependenciesOf<F>[Key]>,
       Depth
     >
   }[keyof DependenciesOf<F>]
 >
 
 type EffectiveSignalsFromDependencies<
-  F extends Flow,
+  F extends Brick,
   Depth extends readonly unknown[]
 > = UnionToIntersection<
   {
     [Key in keyof DependenciesOf<F>]: EffectiveSignalsOf<
-      DependencyFlow<DependenciesOf<F>[Key]>,
+      DependencyBrick<DependenciesOf<F>[Key]>,
       Depth
     >
   }[keyof DependenciesOf<F>]
 >
 
 export type EffectiveErrorsOf<
-  F extends Flow,
+  F extends Brick,
   Depth extends readonly unknown[] = []
 > = Depth['length'] extends 16
   ? ErrorsOf<F>
   : ErrorsOf<F> | EffectiveErrorsFromDependencies<F, [...Depth, unknown]>
 
 export type EffectiveRequirementsOf<
-  F extends Flow,
+  F extends Brick,
   Depth extends readonly unknown[] = []
 > = RequirementsOf<F> &
   (Depth['length'] extends 16
     ? Empty
     : EffectiveRequirementsFromDependencies<F, [...Depth, unknown]>)
 
-export type EffectiveDependenciesOf<F extends Flow, Depth extends readonly unknown[] = []> = {
-  readonly [Key in keyof DependenciesOf<F>]: FlowImplementation<
-    DependencyFlow<DependenciesOf<F>[Key]>
+export type EffectiveDependenciesOf<F extends Brick, Depth extends readonly unknown[] = []> = {
+  readonly [Key in keyof DependenciesOf<F>]: BrickImplementation<
+    DependencyBrick<DependenciesOf<F>[Key]>
   >
 } & (Depth['length'] extends 16
   ? Empty
   : EffectiveDependenciesFromDependencies<F, [...Depth, unknown]>)
 
 export type EffectiveSignalsOf<
-  F extends Flow,
+  F extends Brick,
   Depth extends readonly unknown[] = []
 > = SignalsOf<F> &
   (Depth['length'] extends 16 ? Empty : EffectiveSignalsFromDependencies<F, [...Depth, unknown]>)
 
-type DependencyNodes<F extends Flow, Depth extends readonly unknown[] = []> = {
+type DependencyNodes<F extends Brick, Depth extends readonly unknown[] = []> = {
   readonly [Alias in keyof DependenciesOf<F>]: DependencyNode<
-    DependencyFlow<DependenciesOf<F>[Alias]>,
+    DependencyBrick<DependenciesOf<F>[Alias]>,
     Depth
   >
 }
 
 export type DependencyNode<
-  F extends Flow,
+  F extends Brick,
   Depth extends readonly unknown[] = []
 > = Depth['length'] extends 16
   ? {
-      readonly flow: FlowImplementation<F>
+      readonly brick: BrickImplementation<F>
     } & (keyof DependenciesOf<F> extends never
       ? { readonly dependencies?: never }
       : {
           readonly dependencies: {
             readonly [Alias in keyof DependenciesOf<F>]: {
-              readonly flow: AnyFlowImplementation
+              readonly brick: AnyBrickImplementation
               readonly dependencies: Readonly<Record<string, unknown>>
             }
           }
         })
   : {
-      readonly flow: FlowImplementation<F>
+      readonly brick: BrickImplementation<F>
     } & (keyof DependenciesOf<F> extends never
       ? { readonly dependencies?: never }
       : { readonly dependencies: DependencyNodes<F, [...Depth, unknown]> })
 
-export type DependencySignalHandlers<F extends Flow, Depth extends readonly unknown[] = []> = {
-  readonly [Alias in keyof DependenciesOf<F> as keyof FlowSignalHandlers<
-    DependencyFlow<DependenciesOf<F>[Alias]>,
+export type DependencySignalHandlers<F extends Brick, Depth extends readonly unknown[] = []> = {
+  readonly [Alias in keyof DependenciesOf<F> as keyof BrickSignalHandlers<
+    DependencyBrick<DependenciesOf<F>[Alias]>,
     [...Depth, unknown]
   > extends never
     ? never
-    : Alias]: FlowSignalHandlers<DependencyFlow<DependenciesOf<F>[Alias]>, [...Depth, unknown]>
+    : Alias]: BrickSignalHandlers<DependencyBrick<DependenciesOf<F>[Alias]>, [...Depth, unknown]>
 }
 
-type DepthFallbackSignalHandlers<F extends Flow> = keyof DependenciesOf<F> extends never
+type DepthFallbackSignalHandlers<F extends Brick> = keyof DependenciesOf<F> extends never
   ? Empty
   : {
       readonly [Alias in keyof DependenciesOf<F>]: Readonly<Record<string, unknown>>
     }
 
-export type FlowSignalHandlers<
-  F extends Flow,
+export type BrickSignalHandlers<
+  F extends Brick,
   Depth extends readonly unknown[] = []
 > = (SignalsOf<F> extends SignalDefinitions
   ? keyof SignalsOf<F> extends never
@@ -173,49 +177,49 @@ export type FlowSignalHandlers<
   : Empty) &
   (Depth['length'] extends 16 ? DepthFallbackSignalHandlers<F> : DependencySignalHandlers<F, Depth>)
 
-type DependencyCallOptions<F extends Flow> =
+type DependencyCallOptions<F extends Brick> =
   SignalsOf<F> extends SignalDefinitions
     ? keyof SignalsOf<F> extends never
       ? { readonly signals?: never }
       : { readonly signals?: InternalSignalHandlers<SignalsOf<F>> }
     : { readonly signals?: never }
 
-export type DependencyFunctions<F extends Flow> = {
+export type DependencyFunctions<F extends Brick> = {
   readonly [Key in keyof DependenciesOf<F>]: (
-    params: ParamsOf<DependencyFlow<DependenciesOf<F>[Key]>>,
-    options?: DependencyCallOptions<DependencyFlow<DependenciesOf<F>[Key]>>
-  ) => Promise<ResultOf<DependencyFlow<DependenciesOf<F>[Key]>>>
+    params: ParamsOf<DependencyBrick<DependenciesOf<F>[Key]>>,
+    options?: DependencyCallOptions<DependencyBrick<DependenciesOf<F>[Key]>>
+  ) => Promise<ResultOf<DependencyBrick<DependenciesOf<F>[Key]>>>
 }
 
-export interface FlowTools<F extends Flow> {
+export interface BrickTools<F extends Brick> {
   readonly fail: (error: ErrorsOf<F>) => never
   readonly signals: SignalsOf<F> extends SignalDefinitions ? SignalFunctions<SignalsOf<F>> : never
 }
 
-export type FlowHandler<F extends Flow> = (
+export type BrickHandler<F extends Brick> = (
   params: ParamsOf<F>,
   requirements: RequirementsOf<F>,
   dependencies: DependencyFunctions<F>,
-  tools: FlowTools<F>
+  tools: BrickTools<F>
 ) => ResultOf<F> | Promise<ResultOf<F>>
 
 type RequiredSection<Key extends PropertyKey, Value> = [Key] extends [never]
   ? { readonly [Property in never]?: never }
   : Value
 
-type RequirementsOption<F extends Flow> = RequiredSection<
+type RequirementsOption<F extends Brick> = RequiredSection<
   keyof EffectiveRequirementsOf<F>,
   { readonly requirements: EffectiveRequirementsOf<F> }
 >
-type DependenciesOption<F extends Flow> = RequiredSection<
+type DependenciesOption<F extends Brick> = RequiredSection<
   keyof DependenciesOf<F>,
   { readonly dependencies: DependencyNodes<F> }
 >
-type SignalsOption<F extends Flow> = keyof FlowSignalHandlers<F> extends never
+type SignalsOption<F extends Brick> = keyof BrickSignalHandlers<F> extends never
   ? { readonly signals?: never }
-  : { readonly signals: FlowSignalHandlers<F> }
+  : { readonly signals: BrickSignalHandlers<F> }
 
-export type FlowRunOptions<F extends Flow> = {
+export type BrickRunOptions<F extends Brick> = {
   readonly worker?: Worker
   readonly id?: string
   readonly metadata?: RunMetadata
@@ -223,22 +227,22 @@ export type FlowRunOptions<F extends Flow> = {
   DependenciesOption<F> &
   SignalsOption<F>
 
-export type FlowRunOptionArgs<F extends Flow> = keyof EffectiveRequirementsOf<F> extends never
+export type BrickRunOptionArgs<F extends Brick> = keyof EffectiveRequirementsOf<F> extends never
   ? keyof DependenciesOf<F> extends never
-    ? keyof FlowSignalHandlers<F> extends never
-      ? readonly [options?: FlowRunOptions<F>]
-      : readonly [options: FlowRunOptions<F>]
-    : readonly [options: FlowRunOptions<F>]
-  : readonly [options: FlowRunOptions<F>]
+    ? keyof BrickSignalHandlers<F> extends never
+      ? readonly [options?: BrickRunOptions<F>]
+      : readonly [options: BrickRunOptions<F>]
+    : readonly [options: BrickRunOptions<F>]
+  : readonly [options: BrickRunOptions<F>]
 
-export interface FlowImplementation<F extends Flow = Flow> {
-  readonly handler: FlowHandler<F>
+export interface BrickImplementation<F extends Brick = Brick> {
+  readonly handler: BrickHandler<F>
   run(
     params: ParamsOf<F>,
-    ...options: FlowRunOptionArgs<F>
-  ): FlowRun<EffectiveErrorsOf<F>, ResultOf<F>>
+    ...options: BrickRunOptionArgs<F>
+  ): BrickRun<EffectiveErrorsOf<F>, ResultOf<F>>
 }
 
-export type FlowExecutionResult<F extends Flow> =
+export type BrickExecutionResult<F extends Brick> =
   | { readonly ok: true; readonly value: ResultOf<F> }
   | { readonly ok: false; readonly error: ErrorsOf<F> }

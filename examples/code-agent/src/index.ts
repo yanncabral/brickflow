@@ -1,2 +1,2 @@
 /** Executable example placeholder. */
-export const exampleName = '@flow-example/code-agent' as const
+export const exampleName = '@brickflow-example/code-agent' as const

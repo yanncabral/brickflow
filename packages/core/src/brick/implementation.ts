@@ -1,21 +1,21 @@
 import type { SignalDefinitions, SignalFunctions } from '../signal/types'
-import type { Flow } from './contract'
-import { failWith, isFlowFailure, readFlowFailure } from './failure'
+import type { Brick } from './contract'
+import { failWith, isBrickFailure, readBrickFailure } from './failure'
 import type {
+  BrickExecutionResult,
+  BrickImplementation,
   DependencyFunctions,
   ErrorsOf,
-  FlowExecutionResult,
-  FlowImplementation,
   ParamsOf,
   RequirementsOf,
   SignalsOf
 } from './types'
 
-const implementationBrand = Symbol('FlowImplementation')
+const implementationBrand = Symbol('BrickImplementation')
 
 type BrandedImplementation = { readonly [implementationBrand]: true }
 
-export function markFlowImplementation(target: object): void {
+export function markBrickImplementation(target: object): void {
   Object.defineProperty(target, implementationBrand, {
     configurable: false,
     enumerable: false,
@@ -24,7 +24,7 @@ export function markFlowImplementation(target: object): void {
   })
 }
 
-export function isFlowImplementation(value: unknown): value is FlowImplementation {
+export function isBrickImplementation(value: unknown): value is BrickImplementation {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -33,13 +33,13 @@ export function isFlowImplementation(value: unknown): value is FlowImplementatio
   )
 }
 
-export async function executeFlowImplementation<F extends Flow>(
-  implementation: FlowImplementation<F>,
+export async function executeBrickImplementation<F extends Brick>(
+  implementation: BrickImplementation<F>,
   params: ParamsOf<F>,
   requirements: RequirementsOf<F>,
   dependencies: DependencyFunctions<F>,
   signals: SignalsOf<F> extends SignalDefinitions ? SignalFunctions<SignalsOf<F>> : never
-): Promise<FlowExecutionResult<F>> {
+): Promise<BrickExecutionResult<F>> {
   try {
     const value = await implementation.handler(params, requirements, dependencies, {
       fail: failWith,
@@ -47,7 +47,7 @@ export async function executeFlowImplementation<F extends Flow>(
     })
     return { ok: true, value }
   } catch (error) {
-    if (!isFlowFailure(error)) throw error
-    return { ok: false, error: readFlowFailure(error) as ErrorsOf<F> }
+    if (!isBrickFailure(error)) throw error
+    return { ok: false, error: readBrickFailure(error) as ErrorsOf<F> }
   }
 }

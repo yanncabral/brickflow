@@ -1,4 +1,4 @@
-# Flow: Agent Context
+# Brick: Agent Context
 
 Current behavior. Read after `AGENTS.md`. Specs are history.
 
@@ -6,8 +6,8 @@ Current behavior. Read after `AGENTS.md`. Specs are history.
 
 | Term | Role |
 |---|---|
-| Flow | Typed executable contract |
-| Layer | Immutable Flow group and reusable configuration |
+| Brick | Typed executable contract |
+| Layer | Immutable Brick group and reusable configuration |
 | Worker | Execution mechanism |
 | Signal | Request/response call during execution |
 | Failure | Declared domain outcome |
@@ -15,36 +15,42 @@ Current behavior. Read after `AGENTS.md`. Specs are history.
 
 ## Implementation status
 
-- `@flow/core` implements direct and Layer-bound execution with default local Worker.
-- `@flow/engine-openworkflow` is a placeholder; no durable Worker or serialization exists.
-- `@flow/testing` and `examples/code-agent` are placeholders.
+- `@brickflow/core` implements direct and Layer-bound execution with default local Worker.
+- `@brickflow/engine-openworkflow` is a placeholder; no durable Worker or serialization exists.
+- `@brickflow/testing` and `examples/code-agent` are placeholders.
 - Core runtime tests and all type-tests live under `packages/core/`; basic example runtime test lives under `examples/basic/test/`.
 
-## Flow
+## Brick
 
 ```ts
-interface UseCase extends Flow {
+type UseCase = Brick<{
   params: Input
   result: Output
   errors: DomainFailure
   requires: Requirements
-  depends: { child: ChildFlow }
+  depends: { child: ChildBrick }
   signals: {
     approve: { request: Request; response: Response }
   }
-}
+}>
 
-const useCase = flow<UseCase>(handler)
+const useCase = brick<UseCase>(handler)
 ```
 
-Omit `errors`, `requires`, `depends`, or `signals` when empty; when declared, the property itself is required.
+`Brick<{ ... }>` provides autocomplete for `params`, `result`, `errors`, `requires`, `depends`, and `signals`. `params` and `result` are required. The other fields are optional and default respectively to `never`, an empty requirements object, an empty dependencies object, and an empty signals object.
 
 Rules:
 
-- Interface is type-only.
-- `flow()` returns frozen executable implementation.
+- A named Brick contract is a reusable, erased TypeScript type; multiple implementations may share it.
+- `brick<Contract>(handler)` remains the unchanged executable factory and returns a frozen implementation.
 - No tokens or runtime requirement metadata.
 - Typed direct runs and Layer composition require missing providers statically. Runtime does not prevalidate provider keys because implementations carry no requirement metadata.
+
+## Validated domain types
+
+Core is schema-neutral: it imports no schema library and does not automatically parse or validate Brick inputs or outputs. Validate unknown data at application, transport, persistence, queue, or other untrusted boundaries, infer the schema library's validated output type, and use that branded, refined, transformed, or otherwise narrowed type directly in `Brick<{ ... }>`.
+
+Validated values may pass through the trusted Brick graph without repeated validation. Revalidate whenever data crosses a runtime boundary that invalidates type trust. In particular, brands are erased TypeScript information and must not be assumed to survive persistence, messaging, or a future durable serialization boundary without validation on the receiving side. Zod, TypeBox, ArkType, and Standard Schema-compatible libraries may be used through their output inference; the inferred type depends on the library and schema, and Brick does not provide or require a shared brand type.
 
 ## Execution
 
@@ -55,9 +61,9 @@ await parent.run(params, {
   requirements: { repository },
   dependencies: {
     child: {
-      flow: child,
+      brick: child,
       dependencies: {
-        repositoryWorker: { flow: repositoryWorker }
+        repositoryWorker: { brick: repositoryWorker }
       }
     }
   },
@@ -73,10 +79,10 @@ await parent.run(params, {
 Dependency nodes are always explicit:
 
 ```ts
-dependencies: { child: { flow: child } }
+dependencies: { child: { brick: child } }
 ```
 
-Bare Flow values are invalid. Direct runs require recursive `dependencies` for every selected Flow child. Layer-bound runs supply only unresolved branches; a Layer-resolved node may contain `dependencies` without repeating `flow`.
+Bare Brick values are invalid. Direct runs require recursive `dependencies` for every selected Brick child. Layer-bound runs supply only unresolved branches; a Layer-resolved node may contain `dependencies` without repeating `brick`.
 
 ### Layer-bound
 
@@ -93,10 +99,10 @@ Nested path defines durable identity:
 
 ```ts
 await app.users.getUser.run({ id })
-// flowId: app.users.getUser
+// brickId: app.users.getUser
 ```
 
-Nested Layer entry keys organize access. Durable paths use nested Layer `id`, then Flow entry key.
+Nested Layer entry keys organize access. Durable paths use nested Layer `id`, then Brick entry key.
 
 Bound runs require only unresolved configuration.
 
@@ -142,7 +148,7 @@ Rules:
 - Operations return new frozen Layers.
 - Outer override may replace nested provider.
 - Originals remain unchanged.
-- Requirements include transitive Flows and nested Layers.
+- Requirements include transitive Bricks and nested Layers.
 - Conflicting nested providers need outer override or composition change.
 
 ## Signals
@@ -163,7 +169,7 @@ signals: {
 Rules:
 
 - Direct-run root signals are top-level.
-- Layer-bound own signals use full durable Flow path.
+- Layer-bound own signals use full durable Brick path.
 - Supplied dependency signals use recursive alias paths.
 - Layer-resolved dependency signals use absolute durable Layer paths.
 - Only selected branches require handlers.
@@ -191,7 +197,7 @@ Local Worker:
 - permanent ID reservation for lifetime of Worker instance;
 - no CPU isolation or preemptive cancellation.
 
-Flow execution forwards ID, optional metadata, and optional Layer-bound `flowId` through `EngineExecutionRequest`; Local Worker does not interpret metadata. Durable Workers belong in adapter packages, but none exists yet. Direct execution omits `flowId`; Layer-bound execution uses full path.
+Brick execution forwards ID, optional metadata, and optional Layer-bound `brickId` through `EngineExecutionRequest`; Local Worker does not interpret metadata. Durable Workers belong in adapter packages, but none exists yet. Direct execution omits `brickId`; Layer-bound execution uses full path.
 
 ## Failures
 
@@ -200,7 +206,7 @@ Flow execution forwards ID, optional metadata, and optional Layer-bound `flowId`
 | `fail(error)` | Typed domain failure |
 | Dependency failure | Automatic propagation |
 | `.with(pattern, handler)` | Typed recovery; `undefined` leaves failure unhandled |
-| Unhandled typed failure | Not `PromiseLike` until exhausted; forced consumption rejects with `UnhandledFlowFailureError` |
+| Unhandled typed failure | Not `PromiseLike` until exhausted; forced consumption rejects with `UnhandledBrickFailureError` |
 | Unexpected `throw` | Rejected defect |
 | Worker boundary | `{ ok: false, error }`; future durable adapters must preserve structured data |
 
@@ -222,7 +228,7 @@ Every segment must be:
 
 | Area | Path |
 |---|---|
-| Flow | `packages/core/src/flow/` |
+| Brick | `packages/core/src/brick/` |
 | Layer/providers | `packages/core/src/layer/` |
 | Graph execution | `packages/core/src/worker/execution.ts` |
 | Worker contract/local | `packages/core/src/worker/` |
@@ -235,13 +241,13 @@ Every segment must be:
 ## Non-negotiable invariants
 
 - Core imports no durable adapter.
-- Flow, Layer, bound views are immutable.
+- Brick, Layer, bound views are immutable.
 - Type and runtime select same graph.
 - Signal graph derives from selected dependency graph.
 - Dependency configuration is recursive and explicit.
 - Providers remain structural.
 - Typed failures differ from defects.
-- Flow handlers may return synchronously or through a Promise. No generators or EffectTS.
+- Brick handlers may return synchronously or through a Promise. No generators or EffectTS.
 
 ## Change protocol
 
@@ -264,6 +270,6 @@ git diff --check
 
 ## Design history
 
-- `docs/superpowers/specs/2026-08-10-flow-library-design-v1.md`
-- `docs/superpowers/specs/2026-08-21-direct-flow-execution-design.md`
-- `docs/superpowers/specs/2026-08-24-recursive-flow-graph-configuration-design.md`
+- `docs/superpowers/specs/2026-08-10-brick-library-design-v1.md`
+- `docs/superpowers/specs/2026-08-21-direct-brick-execution-design.md`
+- `docs/superpowers/specs/2026-08-24-recursive-brick-graph-configuration-design.md`

@@ -1,7 +1,7 @@
-import { isFlowImplementation, markFlowImplementation } from '../flow/implementation'
-import type { FlowImplementation } from '../flow/types'
+import { isBrickImplementation, markBrickImplementation } from '../brick/implementation'
+import type { BrickImplementation } from '../brick/types'
 import { assertValidPathSegment } from '../path-segment'
-import { executeFlow, type SuppliedDependencyNode } from '../worker/execution'
+import { executeBrick, type SuppliedDependencyNode } from '../worker/execution'
 import {
   effectiveLayerProviders,
   findLayerDependency,
@@ -19,7 +19,7 @@ import type {
   ReservedLayerEntryName
 } from './types'
 
-function flowIdentity(value: FlowImplementation): FlowImplementation {
+function brickIdentity(value: BrickImplementation): BrickImplementation {
   return value
 }
 
@@ -54,7 +54,7 @@ class LayerImplementation<
       if (reservedNames.has(key as ReservedLayerEntryName)) {
         throw new Error(`Reserved Layer entry name: ${key}`)
       }
-      if (!isFlowImplementation(entry) && !isLayer(entry)) {
+      if (!isBrickImplementation(entry) && !isLayer(entry)) {
         throw new Error(`Invalid Layer entry value for key: ${key}`)
       }
     }
@@ -77,12 +77,16 @@ class LayerImplementation<
   }
 
   private bindEntry(entry: unknown, key: string): unknown {
-    if (isFlowImplementation(entry)) return this.bindFlow(entry, key, `${this.id}.${key}`)
+    if (isBrickImplementation(entry)) return this.bindBrick(entry, key, `${this.id}.${key}`)
     if (isLayer(entry)) return this.bindNestedLayer(entry, `${this.id}.${entry.id}`)
     return entry
   }
 
-  private bindFlow(entry: ReturnType<typeof flowIdentity>, key: string, targetId: string): unknown {
+  private bindBrick(
+    entry: ReturnType<typeof brickIdentity>,
+    key: string,
+    targetId: string
+  ): unknown {
     const layer = this
     const bound = {
       handler: entry.handler,
@@ -101,13 +105,13 @@ class LayerImplementation<
         const root = entries.find((candidate) => candidate.id === targetId) as
           | FlattenedLayerEntry
           | undefined
-        if (!root) throw new Error(`Bound Flow entry not found: ${key}`)
+        if (!root) throw new Error(`Bound Brick entry not found: ${key}`)
         const suppliedDependencies = options?.dependencies ?? {}
         const executionRoot = Object.freeze({
           ...root,
           ...(options?.dependencies ? { suppliedDependencies } : {})
         })
-        return executeFlow({
+        return executeBrick({
           root: executionRoot,
           entries,
           params,
@@ -118,13 +122,13 @@ class LayerImplementation<
           resolveDependency: (caller, alias) => {
             const callerLayerPath = (caller as FlattenedLayerEntry).layerPath ?? root.layerPath
             const suppliedNode = caller.suppliedDependencies?.[alias]
-            const supplied = suppliedNode?.flow ? suppliedNode : undefined
+            const supplied = suppliedNode?.brick ? suppliedNode : undefined
             const suppliedBranchPath = Object.freeze([...(caller.suppliedPath ?? []), alias])
             const scopedSupplied = supplied
               ? Object.freeze({
                   id: [...(caller.id?.split('.') ?? []), alias].join('.'),
                   key: alias,
-                  implementation: supplied.flow,
+                  implementation: supplied.brick,
                   layerPath: Object.freeze([...callerLayerPath]),
                   suppliedPath: suppliedBranchPath,
                   ...(supplied.dependencies ? { suppliedDependencies: supplied.dependencies } : {})
@@ -167,7 +171,7 @@ class LayerImplementation<
               }
             }
             if (scopedSupplied) return scopedSupplied as unknown as FlattenedLayerEntry
-            throw new Error(`Missing dependency Flow entry "${alias}" in the configured Layer`)
+            throw new Error(`Missing dependency Brick entry "${alias}" in the configured Layer`)
           },
           ...(options?.signals
             ? { signals: options.signals as Readonly<Record<string, unknown>> }
@@ -180,7 +184,7 @@ class LayerImplementation<
         })
       }
     }
-    markFlowImplementation(bound)
+    markBrickImplementation(bound)
     return Object.freeze(bound)
   }
 
@@ -196,8 +200,8 @@ class LayerImplementation<
     for (const [key, entry] of Object.entries(nested.entries)) {
       Object.defineProperty(view, key, {
         enumerable: true,
-        value: isFlowImplementation(entry)
-          ? this.bindFlow(entry, key, `${pathPrefix}.${key}`)
+        value: isBrickImplementation(entry)
+          ? this.bindBrick(entry, key, `${pathPrefix}.${key}`)
           : isLayer(entry)
             ? this.bindNestedLayer(entry, `${pathPrefix}.${entry.id}`)
             : entry

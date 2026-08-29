@@ -1,18 +1,18 @@
 import { randomUUID } from 'node:crypto'
-import { ExecutionContext } from '../engine/execution-context'
-import type { EngineExecutionRequest } from '../engine/types'
-import type { Flow } from '../flow/contract'
-import { failWith } from '../flow/failure'
-import { executeFlowImplementation } from '../flow/implementation'
+import type { Brick } from '../brick/contract'
+import { failWith } from '../brick/failure'
+import { executeBrickImplementation } from '../brick/implementation'
 import type {
-  AnyFlowImplementation,
+  AnyBrickImplementation,
+  BrickImplementation,
   DependencyFunctions,
   EffectiveErrorsOf,
-  FlowImplementation,
   ParamsOf,
   RequirementsOf,
   ResultOf
-} from '../flow/types'
+} from '../brick/types'
+import { ExecutionContext } from '../engine/execution-context'
+import type { EngineExecutionRequest } from '../engine/types'
 import { assertValidPathSegment } from '../path-segment'
 import { createSignalFunctions } from '../signal/functions'
 import { createSignalHandlerChain, resolveSignal } from '../signal/handler'
@@ -20,25 +20,25 @@ import { flattenNamespacedSignalHandlers } from '../signal/namespace'
 import type { SignalHandlerChain, UnknownSignalHandlers } from '../signal/types'
 import type { Worker } from './contract'
 import { localWorker } from './local-worker'
-import { createFlowRun } from './run'
-import type { FlowRun, RunMetadata } from './types'
+import { createBrickRun } from './run'
+import type { BrickRun, RunMetadata } from './types'
 
 export interface SuppliedDependencyNode {
-  readonly flow?: AnyFlowImplementation
+  readonly brick?: AnyBrickImplementation
   readonly dependencies?: Readonly<Record<string, SuppliedDependencyNode>>
 }
 
 export interface ExecutionEntry {
   readonly id?: string
   readonly key: string
-  readonly implementation: AnyFlowImplementation
+  readonly implementation: AnyBrickImplementation
   readonly suppliedDependencies?: Readonly<Record<string, SuppliedDependencyNode>>
   readonly suppliedPath?: readonly string[]
   readonly signalPath?: readonly string[]
   readonly ownSignalPath?: readonly string[]
 }
 
-interface ExecuteOptions<F extends Flow> {
+interface ExecuteOptions<F extends Brick> {
   readonly root: ExecutionEntry
   readonly entries: readonly ExecutionEntry[]
   readonly params: ParamsOf<F>
@@ -55,13 +55,13 @@ function directSignalChain(handlers: Readonly<Record<string, unknown>>): SignalH
   return createSignalHandlerChain(flattenNamespacedSignalHandlers(handlers), undefined, true)
 }
 
-async function executeResolvedFlow<F extends Flow>(
+async function executeResolvedBrick<F extends Brick>(
   entry: ExecutionEntry,
   params: ParamsOf<F>,
   options: ExecuteOptions<F>,
   context: ExecutionContext
 ) {
-  const implementation = entry.implementation as unknown as FlowImplementation<F>
+  const implementation = entry.implementation as unknown as BrickImplementation<F>
   const dependencies = new Proxy(Object.create(null) as DependencyFunctions<F>, {
     get(_target, property) {
       if (typeof property !== 'string') return undefined
@@ -75,7 +75,7 @@ async function executeResolvedFlow<F extends Flow>(
           dependencyEntry.suppliedPath ??
           dependencyEntry.id?.split('.') ?? [dependencyEntry.key]
         const layerPath = signalPath.slice(0, -1)
-        const flowPath = [signalPath.at(-1) ?? dependencyEntry.key]
+        const brickPath = [signalPath.at(-1) ?? dependencyEntry.key]
         const parentSignalHandlers = context.signalHandlers
         const localHandlers = callOptions?.signals
           ? createSignalHandlerChain(
@@ -91,15 +91,15 @@ async function executeResolvedFlow<F extends Flow>(
           : parentSignalHandlers
         const dependencyContext = new ExecutionContext({
           layerPath,
-          flowPath,
+          brickPath,
           callId: context.callId,
           providers: context.providers,
           ...(localHandlers ? { signalHandlers: localHandlers } : {})
         })
-        const outcome = await executeResolvedFlow(
+        const outcome = await executeResolvedBrick(
           dependencyEntry,
           dependencyParams as never,
-          options as ExecuteOptions<Flow>,
+          options as ExecuteOptions<Brick>,
           dependencyContext
         )
         if (outcome.ok) return outcome.value
@@ -110,16 +110,16 @@ async function executeResolvedFlow<F extends Flow>(
   const signalContext = entry.ownSignalPath
     ? new ExecutionContext({
         layerPath: entry.ownSignalPath.slice(0, -1),
-        flowPath: [entry.ownSignalPath.at(-1) ?? entry.key],
+        brickPath: [entry.ownSignalPath.at(-1) ?? entry.key],
         callId: context.callId,
         providers: context.providers,
         ...(context.signalHandlers ? { signalHandlers: context.signalHandlers } : {})
       })
     : context
   const signals = createSignalFunctions(signalContext) as Parameters<
-    typeof executeFlowImplementation<F>
+    typeof executeBrickImplementation<F>
   >[4]
-  return executeFlowImplementation(
+  return executeBrickImplementation(
     implementation,
     params,
     context.providers as RequirementsOf<F>,
@@ -128,9 +128,9 @@ async function executeResolvedFlow<F extends Flow>(
   )
 }
 
-export function executeFlow<F extends Flow>(
+export function executeBrick<F extends Brick>(
   options: ExecuteOptions<F>
-): FlowRun<EffectiveErrorsOf<F>, ResultOf<F>> {
+): BrickRun<EffectiveErrorsOf<F>, ResultOf<F>> {
   const id = options.id ?? randomUUID()
   const handlers = options.signals ?? {}
   const boundary = options.directSignals
@@ -139,26 +139,26 @@ export function executeFlow<F extends Flow>(
   const rootId = options.root.id?.split('.') ?? []
   const context = new ExecutionContext({
     layerPath: rootId.slice(0, -1),
-    flowPath: rootId.length > 0 ? [rootId.at(-1) as string] : [],
+    brickPath: rootId.length > 0 ? [rootId.at(-1) as string] : [],
     callId: id,
     providers: options.providers,
     signalHandlers: boundary
   })
   const request: EngineExecutionRequest<ResultOf<F>, EffectiveErrorsOf<F>> = {
     id,
-    ...(options.root.id ? { flowId: options.root.id } : {}),
+    ...(options.root.id ? { brickId: options.root.id } : {}),
     params: options.params,
     ...(options.metadata ? { metadata: options.metadata } : {}),
     context,
-    execute: () => executeResolvedFlow(options.root, options.params, options, context),
+    execute: () => executeResolvedBrick(options.root, options.params, options, context),
     signal: ({ name, request: signalRequest }) => resolveSignal(boundary, name, signalRequest)
   }
-  return createFlowRun((options.worker ?? localWorker).start(request))
+  return createBrickRun((options.worker ?? localWorker).start(request))
 }
 
 function createSuppliedEntry(
   key: string,
-  flow: AnyFlowImplementation,
+  brick: AnyBrickImplementation,
   dependencies: Readonly<Record<string, SuppliedDependencyNode>> | undefined,
   path: readonly string[]
 ): ExecutionEntry {
@@ -166,14 +166,14 @@ function createSuppliedEntry(
   return Object.freeze({
     id,
     key,
-    implementation: flow,
+    implementation: brick,
     suppliedPath: Object.freeze([...path, key]),
     ...(dependencies ? { suppliedDependencies: dependencies } : {})
   })
 }
 
-export function runDirectFlow<F extends Flow>(
-  implementation: FlowImplementation<F>,
+export function runDirectBrick<F extends Brick>(
+  implementation: BrickImplementation<F>,
   params: ParamsOf<F>,
   options?: Readonly<{
     requirements?: Readonly<Record<string, unknown>>
@@ -183,21 +183,21 @@ export function runDirectFlow<F extends Flow>(
     id?: string
     metadata?: RunMetadata
   }>
-): FlowRun<EffectiveErrorsOf<F>, ResultOf<F>> {
+): BrickRun<EffectiveErrorsOf<F>, ResultOf<F>> {
   const root = Object.freeze({
     key: 'direct',
     implementation,
     ...(options?.dependencies ? { suppliedDependencies: options.dependencies } : {})
   })
-  return executeFlow({
+  return executeBrick({
     root,
     entries: [root],
     params,
     providers: Object.freeze({ ...(options?.requirements ?? {}) }),
     resolveDependency: (caller, alias) => {
       const node = caller.suppliedDependencies?.[alias]
-      if (!node?.flow) throw new Error(`Missing direct dependency Flow "${alias}"`)
-      return createSuppliedEntry(alias, node.flow, node.dependencies, caller.id?.split('.') ?? [])
+      if (!node?.brick) throw new Error(`Missing direct dependency Brick "${alias}"`)
+      return createSuppliedEntry(alias, node.brick, node.dependencies, caller.id?.split('.') ?? [])
     },
     directSignals: true,
     ...(options?.signals ? { signals: options.signals } : {}),
