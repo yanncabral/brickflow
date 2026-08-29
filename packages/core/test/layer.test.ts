@@ -2,11 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import { type Brick, brick, Layer } from '../src/index'
 import { flattenLayer, lookupLayer } from '../src/layer/composition'
 
-interface GetUserBrick extends Brick {
+type GetUserBrick = Brick<{
   params: { id: string }
   result: { id: string }
   requires: { database: { find(id: string): string }; logger: { log(message: string): void } }
-}
+}>
 
 const getUser = brick<GetUserBrick>(({ id }) => ({ id }))
 
@@ -65,11 +65,11 @@ describe('Layer', () => {
   })
 
   test('preserves prototype-named providers through nested provide and override', async () => {
-    interface PrototypeProvidersBrick extends Brick {
+    type PrototypeProvidersBrick = Brick<{
       params: undefined
       result: readonly [unknown, unknown, unknown]
       requires: { __proto__: unknown; constructor: unknown; prototype: unknown }
-    }
+    }>
 
     const inspectProviders = brick<PrototypeProvidersBrick>(
       (_params, { __proto__: proto, constructor: constructorProvider, prototype }) => [
@@ -108,11 +108,11 @@ describe('Layer', () => {
   })
 
   test('detects conflicting nested prototype-named providers', () => {
-    interface PrototypeProviderBrick extends Brick {
+    type PrototypeProviderBrick = Brick<{
       params: undefined
       result: unknown
       requires: { __proto__: unknown }
-    }
+    }>
 
     const readPrototype = brick<PrototypeProviderBrick>((_params, providers) => providers.__proto__)
     const first = new Layer('first', { readPrototype }).provide({
@@ -129,11 +129,11 @@ describe('Layer', () => {
   })
 
   test('overrides nested effective providers at the outer layer without mutation', async () => {
-    interface ReadUserBrick extends Brick {
+    type ReadUserBrick = Brick<{
       params: { id: string }
       result: string
       requires: { repository: { get(id: string): string } }
-    }
+    }>
 
     const readUser = brick<ReadUserBrick>(({ id }, { repository }) => repository.get(id))
     const postgres = { get: (id: string) => `postgres-${id}` }
@@ -150,11 +150,11 @@ describe('Layer', () => {
   })
 
   test('outer overrides resolve conflicting nested providers without mutating originals', async () => {
-    interface ReadUserBrick extends Brick {
+    type ReadUserBrick = Brick<{
       params: { id: string }
       result: string
       requires: { repository: { get(id: string): string } }
-    }
+    }>
 
     const readUser = brick<ReadUserBrick>(({ id }, { repository }) => repository.get(id))
     const firstRepository = { get: (id: string) => `first-${id}` }

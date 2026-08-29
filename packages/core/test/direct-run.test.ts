@@ -32,30 +32,30 @@ class RecordingWorker implements Worker {
   }
 }
 
-interface PlainBrick extends Brick {
+type PlainBrick = Brick<{
   params: { value: number }
   result: number
-}
+}>
 
-interface GrandchildBrick extends Brick {
+type GrandchildBrick = Brick<{
   params: { id: string }
   result: string
   requires: { logger: { log(message: string): void } }
-}
+}>
 
-interface ChildBrick extends Brick {
+type ChildBrick = Brick<{
   params: { id: string }
   result: string
   errors: 'missing'
   requires: { repository: { find(id: string): string | undefined } }
   depends: { grandchild: GrandchildBrick }
-}
+}>
 
-interface ParentBrick extends Brick {
+type ParentBrick = Brick<{
   params: { id: string }
   result: string
   depends: { child: ChildBrick }
-}
+}>
 
 const plain = brick<PlainBrick>(({ value }) => value * 2)
 const grandchild = brick<GrandchildBrick>(({ id }, { logger }) => {
@@ -99,20 +99,20 @@ describe('direct Brick execution', () => {
   })
 
   test('keeps equal transitive aliases independent in sibling branches', async () => {
-    interface RepositoryBrick extends Brick {
+    type RepositoryBrick = Brick<{
       params: undefined
       result: string
-    }
-    interface BranchBrick extends Brick {
+    }>
+    type BranchBrick = Brick<{
       params: undefined
       result: string
       depends: { repository: RepositoryBrick }
-    }
-    interface RootBrick extends Brick {
+    }>
+    type RootBrick = Brick<{
       params: undefined
       result: readonly [string, string]
       depends: { primary: BranchBrick; secondary: BranchBrick }
-    }
+    }>
 
     const branch = brick<BranchBrick>(async (_params, _requirements, dependencies) =>
       dependencies.repository(undefined)
@@ -140,21 +140,21 @@ describe('direct Brick execution', () => {
   })
 
   test('routes equal dependency signal names through exact recursive paths', async () => {
-    interface PrimaryBrick extends Brick {
+    type PrimaryBrick = Brick<{
       params: undefined
       result: string
       signals: { approve: { request: { primary: true }; response: string } }
-    }
-    interface SecondaryBrick extends Brick {
+    }>
+    type SecondaryBrick = Brick<{
       params: undefined
       result: number
       signals: { approve: { request: { secondary: true }; response: number } }
-    }
-    interface RootBrick extends Brick {
+    }>
+    type RootBrick = Brick<{
       params: undefined
       result: readonly [string, number]
       depends: { primary: PrimaryBrick; secondary: SecondaryBrick }
-    }
+    }>
 
     const primary = brick<PrimaryBrick>(
       async (_params, _requirements, _dependencies, { signals }) =>
@@ -182,17 +182,17 @@ describe('direct Brick execution', () => {
   })
 
   test('does not resolve dependency signals by final name suffix', async () => {
-    interface ChildBrick extends Brick {
+    type ChildBrick = Brick<{
       params: undefined
       result: boolean
       signals: { approve: { request: undefined; response: boolean } }
-    }
-    interface RootBrick extends Brick {
+    }>
+    type RootBrick = Brick<{
       params: undefined
       result: boolean
       signals: { approve: { request: undefined; response: boolean } }
       depends: { child: ChildBrick }
-    }
+    }>
 
     const child = brick<ChildBrick>(async (_params, _requirements, _dependencies, { signals }) =>
       signals.approve(undefined)
@@ -212,20 +212,20 @@ describe('direct Brick execution', () => {
   })
 
   test('rejects dotted direct dependency aliases before path dispatch can collide', async () => {
-    interface LeafBrick extends Brick {
+    type LeafBrick = Brick<{
       params: undefined
       result: string
-    }
-    interface NestedBrick extends Brick {
+    }>
+    type NestedBrick = Brick<{
       params: undefined
       result: string
       depends: { child: LeafBrick }
-    }
-    interface RootBrick extends Brick {
+    }>
+    type RootBrick = Brick<{
       params: undefined
       result: string
       depends: { 'parent.child': LeafBrick; parent: NestedBrick }
-    }
+    }>
 
     const leaf = brick<LeafBrick>(() => 'leaf')
     const nested = brick<NestedBrick>(async (_params, _requirements, dependencies) =>
@@ -250,17 +250,17 @@ describe('direct Brick execution', () => {
   })
 
   test('rejects empty direct dependency aliases before root signal paths can collide', async () => {
-    interface ChildBrick extends Brick {
+    type ChildBrick = Brick<{
       params: undefined
       result: string
       signals: { approve: { request: undefined; response: string } }
-    }
-    interface RootBrick extends Brick {
+    }>
+    type RootBrick = Brick<{
       params: undefined
       result: string
       signals: { approve: { request: undefined; response: string } }
       depends: { '': ChildBrick }
-    }
+    }>
 
     let rootSignalCalls = 0
     const child = brick<ChildBrick>(async (_params, _requirements, _dependencies, { signals }) =>
@@ -383,20 +383,20 @@ describe('Layer-bound Brick execution', () => {
   })
 
   test('resolves transitive dependency aliases in each caller Layer scope', async () => {
-    interface RepositoryBrick extends Brick {
+    type RepositoryBrick = Brick<{
       params: undefined
       result: string
-    }
-    interface CheckoutBrick extends Brick {
+    }>
+    type CheckoutBrick = Brick<{
       params: undefined
       result: string
       depends: { repository: RepositoryBrick }
-    }
-    interface PlaceOrderBrick extends Brick {
+    }>
+    type PlaceOrderBrick = Brick<{
       params: undefined
       result: string
       depends: { checkout: CheckoutBrick }
-    }
+    }>
 
     const checkout = brick<CheckoutBrick>(async (_params, _requirements, dependencies) =>
       dependencies.repository(undefined)
@@ -417,20 +417,20 @@ describe('Layer-bound Brick execution', () => {
   })
 
   test('resolves transitive Layer dependencies from a supplied Brick caller scope', async () => {
-    interface GrandchildBrick extends Brick {
+    type GrandchildBrick = Brick<{
       params: undefined
       result: string
-    }
-    interface ChildBrick extends Brick {
+    }>
+    type ChildBrick = Brick<{
       params: undefined
       result: string
       depends: { grandchild: GrandchildBrick }
-    }
-    interface ParentBrick extends Brick {
+    }>
+    type ParentBrick = Brick<{
       params: undefined
       result: string
       depends: { child: ChildBrick }
-    }
+    }>
 
     const suppliedChild = brick<ChildBrick>(async (_params, _requirements, dependencies) =>
       dependencies.grandchild(undefined)
@@ -450,20 +450,20 @@ describe('Layer-bound Brick execution', () => {
   })
 
   test('resolves a supplied Brick transitive dependency from its nested caller scope', async () => {
-    interface GrandchildBrick extends Brick {
+    type GrandchildBrick = Brick<{
       params: undefined
       result: string
-    }
-    interface ChildBrick extends Brick {
+    }>
+    type ChildBrick = Brick<{
       params: undefined
       result: string
       depends: { grandchild: GrandchildBrick }
-    }
-    interface ParentBrick extends Brick {
+    }>
+    type ParentBrick = Brick<{
       params: undefined
       result: string
       depends: { child: ChildBrick }
-    }
+    }>
 
     const suppliedChild = brick<ChildBrick>(async (_params, _requirements, dependencies) =>
       dependencies.grandchild(undefined)
@@ -487,16 +487,16 @@ describe('Layer-bound Brick execution', () => {
   })
 
   test('requires and routes only the selected Layer dependency signal namespace', async () => {
-    interface ChildBrick extends Brick {
+    type ChildBrick = Brick<{
       params: undefined
       result: string
       signals: { approve: { request: undefined; response: string } }
-    }
-    interface ParentBrick extends Brick {
+    }>
+    type ParentBrick = Brick<{
       params: undefined
       result: string
       depends: { child: ChildBrick }
-    }
+    }>
 
     const child = brick<ChildBrick>(async (_params, _requirements, _dependencies, { signals }) =>
       signals.approve(undefined)
@@ -520,16 +520,16 @@ describe('Layer-bound Brick execution', () => {
   })
 
   test('uses nested Layer IDs rather than entry keys for selected signal paths', async () => {
-    interface ChildBrick extends Brick {
+    type ChildBrick = Brick<{
       params: undefined
       result: string
       signals: { approve: { request: undefined; response: string } }
-    }
-    interface ParentBrick extends Brick {
+    }>
+    type ParentBrick = Brick<{
       params: undefined
       result: string
       depends: { child: ChildBrick }
-    }
+    }>
 
     const child = brick<ChildBrick>(async (_params, _requirements, _dependencies, { signals }) =>
       signals.approve(undefined)
@@ -552,28 +552,28 @@ describe('Layer-bound Brick execution', () => {
   })
 
   test('splits supplied own signals from Layer-resolved descendant signals', async () => {
-    interface LeafBrick extends Brick {
+    type LeafBrick = Brick<{
       params: undefined
       result: string
       signals: { read: { request: undefined; response: string } }
-    }
-    interface GrandchildBrick extends Brick {
+    }>
+    type GrandchildBrick = Brick<{
       params: undefined
       result: string
       depends: { leaf: LeafBrick }
       signals: { refresh: { request: undefined; response: boolean } }
-    }
-    interface ChildBrick extends Brick {
+    }>
+    type ChildBrick = Brick<{
       params: undefined
       result: string
       depends: { grandchild: GrandchildBrick }
       signals: { approve: { request: undefined; response: boolean } }
-    }
-    interface ParentBrick extends Brick {
+    }>
+    type ParentBrick = Brick<{
       params: undefined
       result: string
       depends: { child: ChildBrick }
-    }
+    }>
 
     const leaf = brick<LeafBrick>(async (_params, _requirements, _dependencies, { signals }) =>
       signals.read(undefined)
@@ -617,20 +617,20 @@ describe('Layer-bound Brick execution', () => {
   })
 
   test('keeps unresolved descendants independent under selected sibling branches', async () => {
-    interface RepositoryBrick extends Brick {
+    type RepositoryBrick = Brick<{
       params: undefined
       result: string
-    }
-    interface BranchBrick extends Brick {
+    }>
+    type BranchBrick = Brick<{
       params: undefined
       result: string
       depends: { repository: RepositoryBrick }
-    }
-    interface ParentBrick extends Brick {
+    }>
+    type ParentBrick = Brick<{
       params: undefined
       result: readonly [string, string]
       depends: { primary: BranchBrick; secondary: BranchBrick }
-    }
+    }>
 
     const branch = brick<BranchBrick>(async (_params, _requirements, dependencies) =>
       dependencies.repository(undefined)
@@ -661,20 +661,20 @@ describe('Layer-bound Brick execution', () => {
   })
 
   test('uses a supplied dependency when transitive global Layer matches are ambiguous', async () => {
-    interface RepositoryBrick extends Brick {
+    type RepositoryBrick = Brick<{
       params: undefined
       result: string
-    }
-    interface CheckoutBrick extends Brick {
+    }>
+    type CheckoutBrick = Brick<{
       params: undefined
       result: string
       depends: { repository: RepositoryBrick }
-    }
-    interface PlaceOrderBrick extends Brick {
+    }>
+    type PlaceOrderBrick = Brick<{
       params: undefined
       result: string
       depends: { checkout: CheckoutBrick }
-    }
+    }>
 
     const checkout = brick<CheckoutBrick>(async (_params, _requirements, dependencies) =>
       dependencies.repository(undefined)
@@ -709,16 +709,16 @@ describe('Layer-bound Brick execution', () => {
   })
 
   test('resolves signals for a supplied-only dependency without an empty Layer namespace', async () => {
-    interface SignalledChildBrick extends Brick {
+    type SignalledChildBrick = Brick<{
       params: { id: string }
       result: boolean
       signals: { approve: { request: { id: string }; response: boolean } }
-    }
-    interface SignalledParentBrick extends Brick {
+    }>
+    type SignalledParentBrick = Brick<{
       params: { id: string }
       result: boolean
       depends: { child: SignalledChildBrick }
-    }
+    }>
 
     const signalledChild = brick<SignalledChildBrick>(
       async ({ id }, _requirements, _dependencies, { signals }) => signals.approve({ id })
@@ -742,21 +742,21 @@ describe('Layer-bound Brick execution', () => {
   })
 
   test('uses only selected Layer signal branches when an ambiguous dependency is supplied', async () => {
-    interface RepositoryBrick extends Brick {
+    type RepositoryBrick = Brick<{
       params: undefined
       result: string
       signals: { refresh: { request: undefined; response: string } }
-    }
-    interface CheckoutBrick extends Brick {
+    }>
+    type CheckoutBrick = Brick<{
       params: undefined
       result: string
       depends: { repository: RepositoryBrick }
-    }
-    interface PlaceOrderBrick extends Brick {
+    }>
+    type PlaceOrderBrick = Brick<{
       params: undefined
       result: string
       depends: { checkout: CheckoutBrick }
-    }
+    }>
 
     const checkout = brick<CheckoutBrick>(async (_params, _requirements, dependencies) =>
       dependencies.repository(undefined)
@@ -790,21 +790,21 @@ describe('Layer-bound Brick execution', () => {
   })
 
   test('uses exact absolute paths for fully Layer-resolved transitive signals', async () => {
-    interface RepositoryBrick extends Brick {
+    type RepositoryBrick = Brick<{
       params: undefined
       result: string
       signals: { refresh: { request: undefined; response: string } }
-    }
-    interface CheckoutBrick extends Brick {
+    }>
+    type CheckoutBrick = Brick<{
       params: undefined
       result: string
       depends: { repository: RepositoryBrick }
-    }
-    interface PlaceOrderBrick extends Brick {
+    }>
+    type PlaceOrderBrick = Brick<{
       params: undefined
       result: string
       depends: { checkout: CheckoutBrick }
-    }
+    }>
 
     const repository = brick<RepositoryBrick>(
       async (_params, _requirements, _dependencies, { signals }) => signals.refresh(undefined)
@@ -830,21 +830,21 @@ describe('Layer-bound Brick execution', () => {
   })
 
   test('local signal overrides follow Layer-resolved callee paths', async () => {
-    interface RepositoryBrick extends Brick {
+    type RepositoryBrick = Brick<{
       params: undefined
       result: string
       signals: { refresh: { request: undefined; response: string } }
-    }
-    interface CheckoutBrick extends Brick {
+    }>
+    type CheckoutBrick = Brick<{
       params: undefined
       result: string
       depends: { repository: RepositoryBrick }
-    }
-    interface PlaceOrderBrick extends Brick {
+    }>
+    type PlaceOrderBrick = Brick<{
       params: undefined
       result: string
       depends: { checkout: CheckoutBrick }
-    }
+    }>
 
     const repository = brick<RepositoryBrick>(
       async (_params, _requirements, _dependencies, { signals }) => signals.refresh(undefined)
@@ -871,21 +871,21 @@ describe('Layer-bound Brick execution', () => {
   })
 
   test('rejects dotted and empty local signal overrides before descendant interception', async () => {
-    interface LeafBrick extends Brick {
+    type LeafBrick = Brick<{
       params: undefined
       result: string
       signals: { approve: { request: undefined; response: string } }
-    }
-    interface ChildBrick extends Brick {
+    }>
+    type ChildBrick = Brick<{
       params: undefined
       result: string
       depends: { leaf: LeafBrick }
-    }
-    interface RootBrick extends Brick {
+    }>
+    type RootBrick = Brick<{
       params: undefined
       result: string
       depends: { child: ChildBrick }
-    }
+    }>
 
     let descendantCalls = 0
     const leaf = brick<LeafBrick>(async (_params, _requirements, _dependencies, { signals }) =>
@@ -929,15 +929,15 @@ describe('Layer-bound Brick execution', () => {
   })
 
   test('rejects empty bound dependency aliases before path collisions', async () => {
-    interface LeafBrick extends Brick {
+    type LeafBrick = Brick<{
       params: undefined
       result: string
-    }
-    interface RootBrick extends Brick {
+    }>
+    type RootBrick = Brick<{
       params: undefined
       result: string
       depends: { '': LeafBrick }
-    }
+    }>
 
     const leaf = brick<LeafBrick>(() => 'leaf')
     const root = brick<RootBrick>((async (
@@ -954,15 +954,15 @@ describe('Layer-bound Brick execution', () => {
   })
 
   test('rejects dotted bound dependency aliases before nested paths can collide', async () => {
-    interface LeafBrick extends Brick {
+    type LeafBrick = Brick<{
       params: undefined
       result: string
-    }
-    interface RootBrick extends Brick {
+    }>
+    type RootBrick = Brick<{
       params: undefined
       result: string
       depends: { 'parent.child': LeafBrick }
-    }
+    }>
 
     const leaf = brick<LeafBrick>(() => 'leaf')
     const root = brick<RootBrick>((async (
@@ -981,11 +981,11 @@ describe('Layer-bound Brick execution', () => {
   })
 
   test('rejects empty signal names before namespaced dispatch can collide', async () => {
-    interface SignalledBrick extends Brick {
+    type SignalledBrick = Brick<{
       params: undefined
       result: string
       signals: { '': { request: undefined; response: string } }
-    }
+    }>
 
     const signalled = brick<SignalledBrick>((async (
       _params: undefined,
@@ -1001,11 +1001,11 @@ describe('Layer-bound Brick execution', () => {
   })
 
   test('rejects dotted signal names before namespaced dispatch can collide', async () => {
-    interface SignalledBrick extends Brick {
+    type SignalledBrick = Brick<{
       params: undefined
       result: string
       signals: { 'status.refresh': { request: undefined; response: string } }
-    }
+    }>
 
     const signalled = brick<SignalledBrick>((async (
       _params: undefined,
@@ -1153,11 +1153,11 @@ describe('core local Worker behavior', () => {
   })
 
   test('delegates boundary signals', async () => {
-    interface SignalledBrick extends Brick {
+    type SignalledBrick = Brick<{
       params: { id: string }
       result: boolean
       signals: { approve: { request: { id: string }; response: boolean } }
-    }
+    }>
     const signalled = brick<SignalledBrick>(async ({ id }, _r, _d, { signals }) =>
       signals.approve({ id })
     )

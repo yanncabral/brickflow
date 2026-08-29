@@ -10,18 +10,18 @@ interface UserRepository {
   find(id: string): Promise<User | undefined>
 }
 
-interface GetUserBrick extends Brick {
+type GetUserBrick = Brick<{
   params: { id: string }
   result: User
   errors: 'user-not-found'
   requires: { users: UserRepository }
-}
+}>
 
-interface SignaledBrick extends Brick {
+type SignaledBrick = Brick<{
   params: { value: string }
   result: string
   signals: { refresh: { request: { force: boolean }; response: 'refreshed' } }
-}
+}>
 
 describe('Brick implementations', () => {
   test('creates immutable, distinct implementations for the same Brick interface', () => {
