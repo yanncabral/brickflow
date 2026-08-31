@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work_dir="$(mktemp -d)"
-trap 'rm -rf "$work_dir"' EXIT
+trap 'rm -rf -- "$work_dir"' EXIT
 
 pack_dir="$work_dir/pack"
 consumer_dir="$work_dir/consumer"
