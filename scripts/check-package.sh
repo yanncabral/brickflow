@@ -10,25 +10,54 @@ consumer_dir="$work_dir/consumer"
 mkdir -p "$pack_dir" "$consumer_dir"
 
 pack_json="$(npm pack "$repo_root/packages/core" --pack-destination "$pack_dir" --json)"
-tarball_name="$(node -e "const value = JSON.parse(process.argv[1]); const pack = Array.isArray(value) ? value[0] : Object.values(value)[0]; process.stdout.write(pack.filename)" "$pack_json")"
-tarball="$pack_dir/$tarball_name"
-
-node - "$pack_json" <<'NODE'
+tarball_name="$(node - "$pack_json" <<'NODE'
 const value = JSON.parse(process.argv[2])
-const pack = Array.isArray(value) ? value[0] : Object.values(value)[0]
+const entries = Array.isArray(value)
+  ? value
+  : value !== null && typeof value === 'object'
+    ? Object.values(value)
+    : []
+
+if (entries.length !== 1) {
+  throw new Error(`Expected exactly one npm pack entry, received ${entries.length}`)
+}
+
+const [pack] = entries
+if (pack === null || typeof pack !== 'object') {
+  throw new Error('Invalid npm pack entry: expected an object')
+}
+if (typeof pack.filename !== 'string' || pack.filename.length === 0) {
+  throw new Error('Invalid npm pack entry: filename must be a non-empty string')
+}
+if (
+  !Array.isArray(pack.files) ||
+  pack.files.some(
+    (file) =>
+      file === null ||
+      typeof file !== 'object' ||
+      typeof file.path !== 'string',
+  )
+) {
+  throw new Error('Invalid npm pack entry: files must contain string path values')
+}
+
 const files = pack.files.map(({ path }) => path).sort()
-const allowed = files.every(
-  (path) => path === 'package.json' || path === 'README.md' || path.startsWith('dist/'),
+const disallowed = files.filter(
+  (path) => path !== 'package.json' && path !== 'README.md' && !path.startsWith('dist/'),
 )
-if (!allowed) {
-  throw new Error(`Unexpected files in tarball:\n${files.join('\n')}`)
+if (disallowed.length > 0) {
+  throw new Error(`Unexpected files in tarball:\n${disallowed.join('\n')}`)
 }
 for (const required of ['dist/index.js', 'dist/index.d.ts', 'package.json']) {
   if (!files.includes(required)) {
     throw new Error(`Missing ${required} in tarball`)
   }
 }
+
+process.stdout.write(pack.filename)
 NODE
+)"
+tarball="$pack_dir/$tarball_name"
 
 cat > "$consumer_dir/package.json" <<EOF
 {
@@ -83,7 +112,18 @@ EOF
 
 mkdir -p "$work_dir/extracted"
 tar -xzf "$tarball" -C "$work_dir/extracted"
-if grep -R --fixed-strings '@brickflow/core' "$work_dir/extracted/package" >/dev/null; then
-  echo 'Packed artifact references private package name @brickflow/core' >&2
-  exit 1
-fi
+set +e
+grep -R --fixed-strings '@brickflow/core' "$work_dir/extracted/package" >/dev/null
+grep_status=$?
+set -e
+case "$grep_status" in
+  0)
+    echo 'Packed artifact references private package name @brickflow/core' >&2
+    exit 1
+    ;;
+  1) ;;
+  *)
+    echo "Failed to scan packed artifact for @brickflow/core (grep exited $grep_status)" >&2
+    exit "$grep_status"
+    ;;
+esac
