@@ -42,13 +42,18 @@ if (
 }
 
 const files = pack.files.map(({ path }) => path).sort()
-const disallowed = files.filter(
-  (path) => path !== 'package.json' && path !== 'README.md' && !path.startsWith('dist/'),
-)
+const allowed = new Set([
+  'README.md',
+  'dist/index.d.ts',
+  'dist/index.js',
+  'dist/index.js.map',
+  'package.json',
+])
+const disallowed = files.filter((path) => !allowed.has(path))
 if (disallowed.length > 0) {
   throw new Error(`Unexpected files in tarball:\n${disallowed.join('\n')}`)
 }
-for (const required of ['dist/index.js', 'dist/index.d.ts', 'package.json']) {
+for (const required of ['dist/index.js', 'dist/index.js.map', 'dist/index.d.ts', 'package.json']) {
   if (!files.includes(required)) {
     throw new Error(`Missing ${required} in tarball`)
   }

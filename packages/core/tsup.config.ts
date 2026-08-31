@@ -5,7 +5,8 @@ export default defineConfig({
   // The package tsconfig is composite; tsup's declaration bundler otherwise raises TS6307.
   dts: {
     compilerOptions: {
-      composite: false
+      composite: false,
+      incremental: false
     }
   },
   entry: ['src/index.ts'],
