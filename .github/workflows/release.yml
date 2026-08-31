@@ -22,6 +22,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -35,7 +36,7 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: Upgrade npm for trusted publishing
-        run: npm install --global npm@latest
+        run: npm install --global npm@11.6.2
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -43,7 +44,19 @@ jobs:
       - name: Validate
         run: bun run validate
 
+      - name: Check npm bootstrap
+        id: bootstrap
+        shell: bash
+        run: |
+          if npm view brickflow@0.0.1 version >/dev/null 2>&1; then
+            echo "bootstrapped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "bootstrapped=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping automated releases until brickflow@0.0.1 is published manually."
+          fi
+
       - name: Create release pull request or publish
+        if: steps.bootstrap.outputs.bootstrapped == 'true'
         uses: changesets/action@v1
         with:
           github-token: ${{ github.token }}
