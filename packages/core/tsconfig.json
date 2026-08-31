@@ -3,7 +3,8 @@
   "compilerOptions": {
     "composite": true,
     "rootDir": ".",
-    "outDir": "dist"
+    "outDir": "dist",
+    "tsBuildInfoFile": "../../node_modules/.cache/brickflow.tsbuildinfo"
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "type-tests/**/*.ts"]
 }
