@@ -19,7 +19,7 @@
     "release": "bun run build && changeset publish",
     "test": "bun test",
     "typecheck": "bun run --filter '*' typecheck",
-    "validate": "bun run typecheck && bun test && bun run lint && bun run build && bun run package:check",
+    "validate": "bun run build && bun run typecheck && bun test && bun run lint && bun run package:check",
     "version-packages": "changeset version && bun install"
   },
   "devDependencies": {
