@@ -1,16 +1,32 @@
 {
-  "name": "@brickflow/core",
-  "version": "0.0.0",
-  "private": true,
+  "name": "brickflow",
+  "version": "0.0.1",
+  "description": "Typed domain failures, structural dependency injection, composable Layers, Signals, and engine-neutral execution for TypeScript.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yanncabral/flow.git"
+  },
+  "homepage": "https://github.com/yanncabral/flow#readme",
+  "bugs": {
+    "url": "https://github.com/yanncabral/flow/issues"
+  },
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --target bun --format esm --external @brickflow/*",
+    "build": "tsup",
     "test": "bun test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
