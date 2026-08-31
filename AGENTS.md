@@ -12,7 +12,7 @@ Read `docs/architecture/agent-context.md` before changing public API, graph reso
 
 # Reference
 
-- `packages/core/`: Brick, Layer, Worker contract, default local Worker, Signal, failure, and engine-neutral interfaces. It must not import a durable adapter.
+- `packages/core/`: source directory for the public `brickflow` package, including Brick, Layer, Worker contract, default local Worker, Signal, failure, and engine-neutral interfaces. It must not import a durable adapter.
 - `packages/engine-openworkflow/`: placeholder for the planned OpenWorkflow durable adapter; no Worker or serialization implementation exists yet.
 - `packages/testing/`: placeholder; current core runtime tests and all type-tests live under `packages/core/`.
 - `examples/basic/`: executable API usage.

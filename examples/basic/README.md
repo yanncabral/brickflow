@@ -1,6 +1,6 @@
 # Basic Brick example
 
-This executable example uses only public exports from `@brickflow/core`. It demonstrates:
+This executable example uses only public exports from `brickflow`. It demonstrates:
 
 - named `Brick<{ ... }>` type aliases whose supported contract fields are discoverable through autocomplete and whose empty optional sections use precise defaults;
 - immutable implementations created by `brick<Contract>(handler)` without classes, `new`, or runtime requirement tuples;
