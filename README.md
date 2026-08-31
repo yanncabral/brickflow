@@ -2,12 +2,20 @@
 
 Experimental TypeScript library for typed domain failures, structural dependency injection, composable Layers, Signals, and engine-neutral execution. Core includes a default in-process Worker; durable adapters are planned.
 
+## Installation
+
+```bash
+npm install brickflow
+```
+
+Brickflow is ESM-only and ships TypeScript declarations.
+
 ## Autocomplete-first Bricks
 
 Declare a named, reusable contract with `Brick<{ ... }>` so editors can suggest every supported field while the contract is authored:
 
 ```ts
-import { type Brick, brick, Layer } from '@brickflow/core'
+import { type Brick, brick, Layer } from 'brickflow'
 
 type GetUserBrick = Brick<{
   params: { id: string }
@@ -70,7 +78,7 @@ bun run clean
 
 ## Workspace packages
 
-- `@brickflow/core`: engine-neutral contracts, direct execution, Layers, and the default in-process Worker.
+- `brickflow` (`packages/core`): public engine-neutral contracts, direct execution, Layers, and the default in-process Worker.
 - `@brickflow/engine-openworkflow`: placeholder for the planned OpenWorkflow adapter.
 - `@brickflow/testing`: placeholder for future testing utilities.
 - `examples/basic`: executable minimal API usage.

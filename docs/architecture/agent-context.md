@@ -15,7 +15,7 @@ Current behavior. Read after `AGENTS.md`. Specs are history.
 
 ## Implementation status
 
-- `@brickflow/core` implements direct and Layer-bound execution with default local Worker.
+- `packages/core` is published as `brickflow` and implements direct and Layer-bound execution with the default local Worker.
 - `@brickflow/engine-openworkflow` is a placeholder; no durable Worker or serialization exists.
 - `@brickflow/testing` and `examples/code-agent` are placeholders.
 - Core runtime tests and all type-tests live under `packages/core/`; basic example runtime test lives under `examples/basic/test/`.
