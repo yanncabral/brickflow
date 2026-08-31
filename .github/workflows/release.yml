@@ -48,11 +48,17 @@ jobs:
         id: bootstrap
         shell: bash
         run: |
-          if npm view brickflow@0.0.1 version >/dev/null 2>&1; then
+          if output=$(npm view brickflow@0.0.1 version --json 2>&1); then
             echo "bootstrapped=true" >> "$GITHUB_OUTPUT"
           else
-            echo "bootstrapped=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Skipping automated releases until brickflow@0.0.1 is published manually."
+            status=$?
+            if grep -Eq '"code"[[:space:]]*:[[:space:]]*"E404"' <<< "$output"; then
+              echo "bootstrapped=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::Skipping automated releases until brickflow@0.0.1 is published manually."
+            else
+              printf '%s\n' "$output" >&2
+              exit "$status"
+            fi
           fi
 
       - name: Create release pull request or publish
