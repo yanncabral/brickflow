@@ -1,4 +1,4 @@
-import { type Brick, brick, Layer } from '@brickflow/core'
+import { type Brick, brick, Layer } from 'brickflow'
 
 interface User {
   readonly id: string
