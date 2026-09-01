@@ -88,4 +88,6 @@ Current architecture: `docs/architecture/agent-context.md`.
 
 Recommended vertical-slice module organization: `docs/architecture/vertical-slice-modules.md`.
 
+Manual for designing Brick-based architectures: `docs/architecture/brick-architecture-manual.md`.
+
 Design history: `docs/superpowers/specs/`. Implementation plans: `docs/superpowers/plans/`.
