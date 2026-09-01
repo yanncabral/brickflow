@@ -9,60 +9,63 @@ pack_dir="$work_dir/pack"
 consumer_dir="$work_dir/consumer"
 mkdir -p "$pack_dir" "$consumer_dir"
 
-pack_json="$(npm pack "$repo_root/packages/core" --pack-destination "$pack_dir" --json)"
-tarball_name="$(node - "$pack_json" <<'NODE'
-const value = JSON.parse(process.argv[2])
-const entries = Array.isArray(value)
-  ? value
-  : value !== null && typeof value === 'object'
-    ? Object.values(value)
-    : []
+npm pack "$repo_root/packages/core" --pack-destination "$pack_dir" --json --silent >/dev/null
 
-if (entries.length !== 1) {
-  throw new Error(`Expected exactly one npm pack entry, received ${entries.length}`)
-}
-
-const [pack] = entries
-if (pack === null || typeof pack !== 'object') {
-  throw new Error('Invalid npm pack entry: expected an object')
-}
-if (typeof pack.filename !== 'string' || pack.filename.length === 0) {
-  throw new Error('Invalid npm pack entry: filename must be a non-empty string')
-}
-if (
-  !Array.isArray(pack.files) ||
-  pack.files.some(
-    (file) =>
-      file === null ||
-      typeof file !== 'object' ||
-      typeof file.path !== 'string',
-  )
-) {
-  throw new Error('Invalid npm pack entry: files must contain string path values')
+contains_exact() {
+  local expected="$1"
+  shift
+  local value
+  for value in "$@"; do
+    if [[ "$value" == "$expected" ]]; then
+      return 0
+    fi
+  done
+  return 1
 }
 
-const files = pack.files.map(({ path }) => path).sort()
-const allowed = new Set([
-  'README.md',
-  'dist/index.d.ts',
-  'dist/index.js',
-  'dist/index.js.map',
-  'package.json',
-])
-const disallowed = files.filter((path) => !allowed.has(path))
-if (disallowed.length > 0) {
-  throw new Error(`Unexpected files in tarball:\n${disallowed.join('\n')}`)
-}
-for (const required of ['dist/index.js', 'dist/index.js.map', 'dist/index.d.ts', 'package.json']) {
-  if (!files.includes(required)) {
-    throw new Error(`Missing ${required} in tarball`)
-  }
-}
+tarball_list="$work_dir/tarballs.txt"
+if ! find "$pack_dir" -maxdepth 1 -type f -name '*.tgz' > "$tarball_list"; then
+  echo 'Failed to locate npm tarball' >&2
+  exit 1
+fi
+tarballs=()
+while IFS= read -r tarball_path; do
+  tarballs+=("$tarball_path")
+done < "$tarball_list"
+if [[ "${#tarballs[@]}" -ne 1 ]]; then
+  echo "Expected exactly one npm tarball, received ${#tarballs[@]}" >&2
+  exit 1
+fi
+tarball="${tarballs[0]}"
 
-process.stdout.write(pack.filename)
-NODE
-)"
-tarball="$pack_dir/$tarball_name"
+package_file_list="$work_dir/package-files.txt"
+if ! tar -tzf "$tarball" | sed 's#^package/##' | sort > "$package_file_list"; then
+  echo 'Failed to list npm tarball contents' >&2
+  exit 1
+fi
+files=()
+while IFS= read -r package_file; do
+  files+=("$package_file")
+done < "$package_file_list"
+allowed=(
+  'README.md'
+  'dist/index.d.ts'
+  'dist/index.js'
+  'dist/index.js.map'
+  'package.json'
+)
+for file in "${files[@]}"; do
+  if ! contains_exact "$file" "${allowed[@]}"; then
+    echo "Unexpected file in tarball: $file" >&2
+    exit 1
+  fi
+done
+for required in 'dist/index.js' 'dist/index.js.map' 'dist/index.d.ts' 'package.json'; do
+  if ! contains_exact "$required" "${files[@]}"; then
+    echo "Missing $required in tarball" >&2
+    exit 1
+  fi
+done
 
 cat > "$consumer_dir/package.json" <<EOF
 {
