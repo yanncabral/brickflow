@@ -11,14 +11,42 @@ mkdir -p "$pack_dir" "$consumer_dir"
 
 npm pack "$repo_root/packages/core" --pack-destination "$pack_dir" --json --silent >/dev/null
 
-mapfile -t tarballs < <(find "$pack_dir" -maxdepth 1 -type f -name '*.tgz')
+contains_exact() {
+  local expected="$1"
+  shift
+  local value
+  for value in "$@"; do
+    if [[ "$value" == "$expected" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+tarball_list="$work_dir/tarballs.txt"
+if ! find "$pack_dir" -maxdepth 1 -type f -name '*.tgz' > "$tarball_list"; then
+  echo 'Failed to locate npm tarball' >&2
+  exit 1
+fi
+tarballs=()
+while IFS= read -r tarball_path; do
+  tarballs+=("$tarball_path")
+done < "$tarball_list"
 if [[ "${#tarballs[@]}" -ne 1 ]]; then
   echo "Expected exactly one npm tarball, received ${#tarballs[@]}" >&2
   exit 1
 fi
 tarball="${tarballs[0]}"
 
-mapfile -t files < <(tar -tzf "$tarball" | sed 's#^package/##' | sort)
+package_file_list="$work_dir/package-files.txt"
+if ! tar -tzf "$tarball" | sed 's#^package/##' | sort > "$package_file_list"; then
+  echo 'Failed to list npm tarball contents' >&2
+  exit 1
+fi
+files=()
+while IFS= read -r package_file; do
+  files+=("$package_file")
+done < "$package_file_list"
 allowed=(
   'README.md'
   'dist/index.d.ts'
@@ -27,13 +55,13 @@ allowed=(
   'package.json'
 )
 for file in "${files[@]}"; do
-  if [[ ! " ${allowed[*]} " =~ " $file " ]]; then
+  if ! contains_exact "$file" "${allowed[@]}"; then
     echo "Unexpected file in tarball: $file" >&2
     exit 1
   fi
 done
 for required in 'dist/index.js' 'dist/index.js.map' 'dist/index.d.ts' 'package.json'; do
-  if [[ ! " ${files[*]} " =~ " $required " ]]; then
+  if ! contains_exact "$required" "${files[@]}"; then
     echo "Missing $required in tarball" >&2
     exit 1
   fi
