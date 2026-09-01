@@ -1,6 +1,6 @@
 {
   "name": "brickflow",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Typed domain failures, structural dependency injection, composable Layers, Signals, and engine-neutral execution for TypeScript.",
   "repository": {
     "type": "git",
