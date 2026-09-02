@@ -27,6 +27,13 @@
         "brickflow": "workspace:*",
       },
     },
+    "examples/user-session-crud": {
+      "name": "@brickflow-example/user-session-crud",
+      "version": "0.0.0",
+      "dependencies": {
+        "brickflow": "workspace:*",
+      },
+    },
     "packages/core": {
       "name": "brickflow",
       "version": "0.0.1",
@@ -72,6 +79,8 @@
     "@brickflow-example/basic": ["@brickflow-example/basic@workspace:examples/basic"],
 
     "@brickflow-example/code-agent": ["@brickflow-example/code-agent@workspace:examples/code-agent"],
+
+    "@brickflow-example/user-session-crud": ["@brickflow-example/user-session-crud@workspace:examples/user-session-crud"],
 
     "@brickflow/engine-openworkflow": ["@brickflow/engine-openworkflow@workspace:packages/engine-openworkflow"],
 

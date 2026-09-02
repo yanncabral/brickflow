@@ -39,6 +39,7 @@ export type {
   LayerEntry,
   LayerProvidersOf,
   LayerRequirementsOf,
+  LayerState,
   LayerUnprovidedRequirementsOf,
   RequirementConflict
 } from './layer/types'
