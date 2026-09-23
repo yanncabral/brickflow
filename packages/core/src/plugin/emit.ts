@@ -17,12 +17,25 @@ function activePlugins(
   return plugins.filter((plugin) => shouldEmitPlugin(plugin, context.isReplay))
 }
 
+/**
+ * Best-effort plugin invocation. A throwing (or rejecting) plugin hook must
+ * never break Brick execution, mask the real exit, or corrupt durable replay:
+ * the error is swallowed and emission continues with the next plugin.
+ */
+async function invokeSafely(action: () => void | Promise<void>): Promise<void> {
+  try {
+    await action()
+  } catch {
+    // Intentionally ignored: plugin hooks are observers, not participants.
+  }
+}
+
 export async function emitPluginStart(
   plugins: readonly BrickPlugin[],
   context: BrickPluginContext
 ): Promise<void> {
   for (const plugin of activePlugins(plugins, context)) {
-    await plugin.onStart?.(context)
+    await invokeSafely(() => plugin.onStart?.(context))
   }
 }
 
@@ -32,7 +45,7 @@ export async function emitPluginSuccess(
   value: unknown
 ): Promise<void> {
   for (const plugin of activePlugins(plugins, context)) {
-    await plugin.onSuccess?.(context, value)
+    await invokeSafely(() => plugin.onSuccess?.(context, value))
   }
 }
 
@@ -42,7 +55,7 @@ export async function emitPluginFailure(
   error: unknown
 ): Promise<void> {
   for (const plugin of activePlugins(plugins, context)) {
-    await plugin.onFailure?.(context, error)
+    await invokeSafely(() => plugin.onFailure?.(context, error))
   }
 }
 
@@ -52,7 +65,7 @@ export async function emitPluginDefect(
   error: unknown
 ): Promise<void> {
   for (const plugin of activePlugins(plugins, context)) {
-    await plugin.onDefect?.(context, error)
+    await invokeSafely(() => plugin.onDefect?.(context, error))
   }
 }
 
@@ -62,7 +75,7 @@ export async function emitPluginSignal(
   signal: BrickPluginSignalEvent
 ): Promise<void> {
   for (const plugin of activePlugins(plugins, context)) {
-    await plugin.onSignal?.(context, signal)
+    await invokeSafely(() => plugin.onSignal?.(context, signal))
   }
 }
 
@@ -72,7 +85,7 @@ export async function emitPluginFinally(
   exit: BrickPluginExit
 ): Promise<void> {
   for (const plugin of activePlugins(plugins, context)) {
-    await plugin.onFinally?.(context, exit)
+    await invokeSafely(() => plugin.onFinally?.(context, exit))
   }
 }
 
@@ -88,10 +101,10 @@ export function wrapSignalFunctions<Signals extends object>(
       return async (request: unknown) => {
         try {
           const response = await invoke(request)
-          await emit({ name: property, request, ok: true, response })
+          await invokeSafely(() => emit({ name: property, request, ok: true, response }))
           return response
         } catch (error) {
-          await emit({ name: property, request, ok: false, error })
+          await invokeSafely(() => emit({ name: property, request, ok: false, error }))
           throw error
         }
       }
