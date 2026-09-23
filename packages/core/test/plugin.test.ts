@@ -220,4 +220,174 @@ describe('Brick plugins', () => {
     expect(defaulted).toEqual(['start'])
     expect(optedIn).toEqual(['start', 'start'])
   })
+
+  test('throwing onStart does not break successful execution', async () => {
+    const events: string[] = []
+    const explosive: BrickPlugin = {
+      name: 'explosive',
+      onStart: () => {
+        throw new Error('plugin start boom')
+      },
+      onSuccess: () => {
+        events.push('success-seen')
+      },
+      onFinally: (_context, exit) => {
+        events.push(`finally:${exit.kind}`)
+      }
+    }
+    const ok = brick<ChildBrick>({ plugins: [explosive] }, ({ id }) => `hello ${id}`)
+
+    await expect(Promise.resolve(ok.run({ id: 'ada' }))).resolves.toBe('hello ada')
+    expect(events).toEqual(['success-seen', 'finally:success'])
+  })
+
+  test('throwing onFailure does not mask a typed failure', async () => {
+    const explosive: BrickPlugin = {
+      name: 'explosive',
+      onFailure: () => {
+        throw new Error('plugin failure boom')
+      }
+    }
+    const failing = brick<ChildBrick>({ plugins: [explosive] }, (_params, _r, _d, { fail }) =>
+      fail('missing')
+    )
+
+    await expect(
+      Promise.resolve(failing.run({ id: 'ada' }).with('missing', () => 'recovered'))
+    ).resolves.toBe('recovered')
+  })
+
+  test('throwing onDefect preserves the original defect', async () => {
+    const explosive: BrickPlugin = {
+      name: 'explosive',
+      onDefect: () => {
+        throw new Error('plugin defect boom')
+      }
+    }
+    const defective = brick<ChildBrick>({ plugins: [explosive] }, () => {
+      throw new Error('original boom')
+    })
+
+    await expect(Promise.resolve(defective.run({ id: 'ada' }))).rejects.toThrow('original boom')
+  })
+
+  test('throwing onSignal does not break the signal call', async () => {
+    const explosive: BrickPlugin = {
+      name: 'explosive',
+      onSignal: () => {
+        throw new Error('plugin signal boom')
+      }
+    }
+    const signalled = brick<SignalledBrick>(
+      { plugins: [explosive] },
+      async ({ id }, _r, _d, { signals }) => signals.approve({ id })
+    )
+
+    await expect(
+      Promise.resolve(
+        signalled.run({ id: 'ada' }, { signals: { approve: ({ id }) => id === 'ada' } })
+      )
+    ).resolves.toBe(true)
+  })
+
+  test('onFinally still runs when an earlier hook threw', async () => {
+    const events: string[] = []
+    const explosive: BrickPlugin = {
+      name: 'explosive',
+      onStart: () => {
+        throw new Error('plugin start boom')
+      },
+      onSuccess: () => {
+        throw new Error('plugin success boom')
+      },
+      onFinally: (_context, exit) => {
+        events.push(`finally:${exit.kind}`)
+      }
+    }
+    const ok = brick<ChildBrick>({ plugins: [explosive] }, ({ id }) => `hello ${id}`)
+
+    await expect(Promise.resolve(ok.run({ id: 'ada' }))).resolves.toBe('hello ada')
+    expect(events).toEqual(['finally:success'])
+  })
+
+  test('a throwing plugin does not prevent other plugins from receiving events', async () => {
+    const events: string[] = []
+    const broken: BrickPlugin = {
+      name: 'broken',
+      onStart: () => {
+        throw new Error('broken start boom')
+      },
+      onSuccess: () => {
+        throw new Error('broken success boom')
+      },
+      onFinally: () => {
+        throw new Error('broken finally boom')
+      }
+    }
+    const healthy: BrickPlugin = {
+      name: 'healthy',
+      onStart: () => {
+        events.push('healthy:start')
+      },
+      onSuccess: () => {
+        events.push('healthy:success')
+      },
+      onFinally: (_context, exit) => {
+        events.push(`healthy:finally:${exit.kind}`)
+      }
+    }
+    const ok = brick<ChildBrick>({ plugins: [broken, healthy] }, ({ id }) => `hello ${id}`)
+
+    await expect(Promise.resolve(ok.run({ id: 'ada' }))).resolves.toBe('hello ada')
+    expect(events).toEqual(['healthy:start', 'healthy:success', 'healthy:finally:success'])
+  })
+
+  test('fake durable worker executing twice respects replay opt-in', async () => {
+    const executions: string[] = []
+    const defaulted: string[] = []
+    const optedIn: string[] = []
+    const quiet: BrickPlugin = {
+      name: 'quiet',
+      onStart: () => {
+        defaulted.push('start')
+      },
+      onFinally: () => {
+        defaulted.push('finally')
+      }
+    }
+    const noisy: BrickPlugin = {
+      name: 'noisy',
+      replay: 'emit',
+      onStart: () => {
+        optedIn.push('start')
+      },
+      onFinally: () => {
+        optedIn.push('finally')
+      }
+    }
+    const base = new LocalWorker()
+    const durableWorker: Worker = {
+      start: <Result, Failure>(request: EngineExecutionRequest<Result, Failure>) => {
+        executions.push(request.id)
+        return base.start(request) as EngineExecutionHandle<Result, Failure>
+      }
+    }
+    const plain = brick<Brick<{ params: undefined; result: string }>>(
+      { plugins: [quiet, noisy] },
+      () => 'ok'
+    )
+
+    // First execution: normal run through the durable worker.
+    await Promise.resolve(plain.run(undefined, { worker: durableWorker, id: 'durable-1' }))
+    expect(defaulted).toEqual(['start', 'finally'])
+    expect(optedIn).toEqual(['start', 'finally'])
+
+    // Second execution: durable replay of the same logical call.
+    await Promise.resolve(
+      plain.run(undefined, { worker: durableWorker, id: 'durable-1-replay', isReplay: true })
+    )
+    expect(executions).toEqual(['durable-1', 'durable-1-replay'])
+    expect(defaulted).toEqual(['start', 'finally'])
+    expect(optedIn).toEqual(['start', 'finally', 'start', 'finally'])
+  })
 })
