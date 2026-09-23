@@ -15,10 +15,11 @@ Current behavior. Read after `AGENTS.md`. Specs are history.
 
 ## Implementation status
 
-- `packages/core` is published as `brickflow` and implements direct and Layer-bound execution with the default local Worker.
-- `@brickflow/engine-openworkflow` is a placeholder; no durable Worker or serialization exists.
+- `packages/core` is published as `brickflow` and implements direct and Layer-bound execution with the default local Worker, plus the `BrickPlugin` hook contract with per-brick lifecycle emission.
+- `@brickflow/engine-openworkflow` implements the durable `OpenWorkflowWorker` (sqlite/postgres backends) with per-brick durable steps and replay-safe tracing e2e coverage.
+- `@brickflow/plugin-otel` ships the replay-safe tracing plugin (`createTracingPlugin` over a zero-dependency `Tracer`, plus an opt-in `@opentelemetry/api` adapter subpath).
 - `@brickflow/testing` and `examples/code-agent` are placeholders.
-- Core runtime tests and all type-tests live under `packages/core/`; basic example runtime test lives under `examples/basic/test/`.
+- Core runtime tests and all type-tests live under `packages/core/`; basic example runtime test lives under `examples/basic/test/`; tracing example runtime test lives under `examples/tracing-basic/test/`.
 
 ## Brick
 
@@ -184,6 +185,11 @@ interface Worker {
     request: EngineExecutionRequest<Result, Failure>
   ): EngineExecutionHandle<Result, Failure>
 }
+
+type EngineStepRunner = <Result>(
+  stepName: string,
+  run: () => Promise<Result>
+) => Promise<Result>
 ```
 
 Core exports `Worker`, `LocalWorker`, and default `localWorker`.
@@ -195,9 +201,50 @@ Local Worker:
 - signals unless run was cancelled;
 - immediate cancellation rejection; running work is not interrupted;
 - permanent ID reservation for lifetime of Worker instance;
-- no CPU isolation or preemptive cancellation.
+- no CPU isolation or preemptive cancellation;
+- executes every Brick node inline; `EngineExecutionRequest.step` stays absent.
 
-Brick execution forwards ID, optional metadata, and optional Layer-bound `brickId` through `EngineExecutionRequest`; Local Worker does not interpret metadata. Durable Workers belong in adapter packages, but none exists yet. Direct execution omits `brickId`; Layer-bound execution uses full path.
+Brick execution forwards ID, optional metadata, and optional Layer-bound `brickId` through `EngineExecutionRequest`; Local Worker does not interpret metadata. Direct execution omits `brickId`; Layer-bound execution uses full path.
+
+Per-brick durable steps:
+
+- `EngineExecutionRequest.step` is a late-bound runner assigned by a durable Worker before invoking `execute()`; core invokes it once per executed Brick node and otherwise never interprets the name beyond determinism.
+- Step names are pure functions of `(nodeId, callId)` via `toDurableStepName` (`packages/core/src/worker/step-name.ts`): `brickflow/<nodeId>` where `nodeId` is the Layer-bound Brick path (or the supplied dependency path for direct runs), falling back to the call id for direct-run roots.
+- A durable runner persists a checkpoint per step and skips re-execution when one exists. The wrapped `run` closes over exactly one Brick handler invocation, including its plugin lifecycle, so a skipped step emits no plugin events either.
+
+OpenWorkflow Worker (`@brickflow/engine-openworkflow`, `OpenWorkflowWorker`):
+
+- durable backend: in-memory sqlite by default (tests); file sqlite via `{ kind: 'sqlite', path }`; postgres via a connected `BackendPostgres` instance;
+- registered workflow name defaults to `brickflow/brick-run`; run submission uses idempotency key `brickflow-run:<run id>`;
+- per-brick steps with retry policy defaulting to `{ maximumAttempts: 1 }` (fail fast); `maximumAttempts > 1` resumes interrupted graphs with completed bricks resolving from checkpoints;
+- typed failures travel as `{ ok: false, error }` envelope data and are never thrown; defects are serialized and rehydrated so drivers observe the original thrown error instead of engine internals.
+
+## Plugins
+
+```ts
+const plugin: BrickPlugin = {
+  name: 'brick-otel-tracing',
+  replay: 'skip', // default; opt in with 'emit'
+  onStart: (context) => {},
+  onSuccess: (context, value) => {},
+  onFailure: (context, error) => {}, // typed domain failure
+  onDefect: (context, error) => {}, // unexpected throw
+  onSignal: (context, signal) => {},
+  onFinally: (context, exit) => {}
+}
+
+await app.getGreeting.run(params, { signals, plugins: [plugin] })
+```
+
+`BrickPluginContext` carries `brickId` (absent for direct-run roots), `callId`, `layerPath`, `brickPath`, `params`, optional `metadata`, and `isReplay`. Core emits `onStart`, exactly one terminal hook (`onSuccess`/`onFailure`/`onDefect`), and `onFinally` per executed Brick node; signal invocations emit `onSignal` with `{ name, request, ok, response?, error? }`.
+
+Rules:
+
+- Replay-safe by default: when `context.isReplay` is true the plugin no-ops unless created with `replay: 'emit'`; core also skips plugin events entirely for checkpoint-skipped steps.
+- Best-effort: a throwing (or rejecting) hook never breaks Brick execution, masks the real exit, or corrupts durable replay; the error is swallowed and emission continues with the next plugin.
+- Wiring: run options accept `plugins`; Brick implementations may also declare `plugins` via `brick<Contract>({ plugins }, handler)`; both merge with Worker-level plugins.
+- Failure/defect split mirrors core: `onFailure` receives typed domain failures, `onDefect` receives unexpected throws. Never collapse typed failure into generic `Error` across durable boundary.
+- Tracing reference: `@brickflow/plugin-otel` (`createTracingPlugin(tracer)`) opens one span per Brick (`brickId`, else durable path), records signals as `signal.<name>` events, typed failures as `brick.failure` with `brick.outcome=typed-failure`, defects as `brick.defect` with `brick.outcome=defect`, and closes spans idempotently on the terminal hook/`onFinally`. The main entry is zero-dependency; `wrapOtelTracer` lives in the `@brickflow/plugin-otel/otel-adapter` subpath and only needs `@opentelemetry/api` (optional peer).
 
 ## Failures
 
@@ -208,7 +255,8 @@ Brick execution forwards ID, optional metadata, and optional Layer-bound `brickI
 | `.with(pattern, handler)` | Typed recovery; `undefined` leaves failure unhandled |
 | Unhandled typed failure | Not `PromiseLike` until exhausted; forced consumption rejects with `UnhandledBrickFailureError` |
 | Unexpected `throw` | Rejected defect |
-| Worker boundary | `{ ok: false, error }`; future durable adapters must preserve structured data |
+| Worker boundary | `{ ok: false, error }`; durable adapters preserve structured data |
+| Durable envelope | Typed failures travel as `{ ok: false, error }` data, never thrown; defects serialize/rehydrate so drivers observe the original error |
 
 Never collapse typed failure into generic `Error` across durable boundary.
 
@@ -232,8 +280,13 @@ Every segment must be:
 | Layer/providers | `packages/core/src/layer/` |
 | Graph execution | `packages/core/src/worker/execution.ts` |
 | Worker contract/local | `packages/core/src/worker/` |
+| Durable step names | `packages/core/src/worker/step-name.ts` |
+| Plugins | `packages/core/src/plugin/` |
 | Signals | `packages/core/src/signal/` |
 | Engine-neutral context | `packages/core/src/engine/` |
+| OpenWorkflow Worker | `packages/engine-openworkflow/src/` |
+| OTel tracing plugin | `packages/plugin-otel/src/` |
+| Tracing example | `examples/tracing-basic/` |
 | Path validation | `packages/core/src/path-segment.ts` |
 | Runtime tests | `packages/core/test/` |
 | Type-tests | `packages/core/type-tests/` |

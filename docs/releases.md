@@ -48,3 +48,14 @@ Immediately after publishing `0.0.1`, configure the npm trusted publisher with t
 ## Publishing after bootstrap
 
 Subsequent releases use GitHub Actions OIDC and npm provenance. Do not configure an `NPM_TOKEN`. Trusted-publisher identity or workflow mismatches fail safely instead of falling back to a stored credential.
+
+## Unreleased: Brick plugins + durable OpenWorkflow worker + OTel tracing
+
+User-facing behavior (add changesets for `brickflow` plus the new packages before merge to `main`):
+
+- `brickflow`: new `BrickPlugin` contract with per-brick lifecycle hooks (`onStart`, `onSuccess`, `onFailure` for typed domain failures, `onDefect` for unexpected throws, `onSignal`, `onFinally`). Plugins wire via run options or `brick<Contract>({ plugins }, handler)`; replay defaults to `skip` (opt in with `emit`); throwing hooks are best-effort and never break execution. `EngineExecutionRequest` gains a late-bound per-brick `step` runner; durable step names are `brickflow/<node path>` (`toDurableStepName`, `DURABLE_STEP_PREFIX`).
+- `@brickflow/engine-openworkflow` (new): `OpenWorkflowWorker` with sqlite (default in-memory) and postgres backends, workflow `brickflow/brick-run`, idempotency key `brickflow-run:<id>`, per-brick steps with fail-fast retry default, typed failures preserved as envelope data, defects rehydrated to the original error.
+- `@brickflow/plugin-otel` (new): `createTracingPlugin(tracer)` — one span per Brick, `signal.<name>` events, `brick.failure`/`brick.defect` outcomes, replay-safe by default; zero-dependency core plus opt-in `@brickflow/plugin-otel/otel-adapter` for real OpenTelemetry tracers.
+- `examples/tracing-basic` (new): end-to-end Layer-bound tracing example against the real plugin.
+
+Durable/replay compatibility: checkpoint-skipped steps re-resolve from persisted checkpoints and emit no plugin events; step names are deterministic in `(nodeId, callId)`, so graphs replay against the same checkpoints across restarts. Param/result snippets recorded by the tracing plugin are truncated JSON — redact PII before export.
