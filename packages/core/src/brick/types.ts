@@ -1,4 +1,5 @@
 import type { HasValidPathSegmentKeys } from '../path-segment'
+import type { BrickPlugin } from '../plugin/types'
 import type {
   BoundarySignalHandlers,
   InternalSignalHandlers,
@@ -180,9 +181,12 @@ export type BrickSignalHandlers<
 type DependencyCallOptions<F extends Brick> =
   SignalsOf<F> extends SignalDefinitions
     ? keyof SignalsOf<F> extends never
-      ? { readonly signals?: never }
-      : { readonly signals?: InternalSignalHandlers<SignalsOf<F>> }
-    : { readonly signals?: never }
+      ? { readonly signals?: never; readonly plugins?: readonly BrickPlugin[] }
+      : {
+          readonly signals?: InternalSignalHandlers<SignalsOf<F>>
+          readonly plugins?: readonly BrickPlugin[]
+        }
+    : { readonly signals?: never; readonly plugins?: readonly BrickPlugin[] }
 
 export type DependencyFunctions<F extends Brick> = {
   readonly [Key in keyof DependenciesOf<F>]: (
@@ -223,6 +227,8 @@ export type BrickRunOptions<F extends Brick> = {
   readonly worker?: Worker
   readonly id?: string
   readonly metadata?: RunMetadata
+  readonly plugins?: readonly BrickPlugin[]
+  readonly isReplay?: boolean
 } & RequirementsOption<F> &
   DependenciesOption<F> &
   SignalsOption<F>
@@ -237,6 +243,7 @@ export type BrickRunOptionArgs<F extends Brick> = keyof EffectiveRequirementsOf<
 
 export interface BrickImplementation<F extends Brick = Brick> {
   readonly handler: BrickHandler<F>
+  readonly plugins?: readonly BrickPlugin[]
   run(
     params: ParamsOf<F>,
     ...options: BrickRunOptionArgs<F>

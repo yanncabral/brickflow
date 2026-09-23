@@ -1,6 +1,7 @@
 import { isBrickImplementation, markBrickImplementation } from '../brick/implementation'
 import type { BrickImplementation } from '../brick/types'
 import { assertValidPathSegment } from '../path-segment'
+import type { BrickPlugin } from '../plugin/types'
 import { executeBrick, type SuppliedDependencyNode } from '../worker/execution'
 import {
   effectiveLayerProviders,
@@ -90,6 +91,7 @@ class LayerImplementation<
     const layer = this
     const bound = {
       handler: entry.handler,
+      ...(entry.plugins ? { plugins: entry.plugins } : {}),
       run(
         params: unknown,
         options?: {
@@ -99,6 +101,8 @@ class LayerImplementation<
           readonly worker?: unknown
           readonly id?: string
           readonly metadata?: Readonly<Record<string, unknown>>
+          readonly plugins?: readonly BrickPlugin[]
+          readonly isReplay?: boolean
         }
       ) {
         const entries = flattenLayer(layer)
@@ -180,7 +184,9 @@ class LayerImplementation<
           ...(typeof options?.id === 'string' ? { id: options.id } : {}),
           ...(options?.metadata
             ? { metadata: options.metadata as Readonly<Record<string, unknown>> }
-            : {})
+            : {}),
+          ...(options?.plugins ? { plugins: options.plugins } : {}),
+          ...(typeof options?.isReplay === 'boolean' ? { isReplay: options.isReplay } : {})
         })
       }
     }

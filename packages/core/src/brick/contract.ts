@@ -1,3 +1,4 @@
+import type { BrickPlugin } from '../plugin/types'
 import type { SignalDefinitions } from '../signal/types'
 import { runDirectBrick } from '../worker/execution'
 import { markBrickImplementation } from './implementation'
@@ -14,10 +15,29 @@ interface BrickConfig {
 
 export type Brick<Config extends BrickConfig = BrickConfig> = Config
 
+export interface BrickOptions {
+  readonly plugins?: readonly BrickPlugin[]
+}
+
 export function brick<F extends Brick>(
   handler: F extends ValidBrick<F> ? BrickHandler<F> : never
+): BrickImplementation<F>
+export function brick<F extends Brick>(
+  options: BrickOptions,
+  handler: F extends ValidBrick<F> ? BrickHandler<F> : never
+): BrickImplementation<F>
+export function brick<F extends Brick>(
+  handlerOrOptions: BrickOptions | (F extends ValidBrick<F> ? BrickHandler<F> : never),
+  handler?: F extends ValidBrick<F> ? BrickHandler<F> : never
 ): BrickImplementation<F> {
-  const implementation = { handler } as unknown as BrickImplementation<F>
+  const resolvedHandler = (
+    typeof handlerOrOptions === 'function' ? handlerOrOptions : handler
+  ) as BrickHandler<F>
+  const plugins = typeof handlerOrOptions === 'function' ? undefined : handlerOrOptions.plugins
+  const implementation = {
+    handler: resolvedHandler,
+    ...(plugins ? { plugins: Object.freeze([...plugins]) } : {})
+  } as unknown as BrickImplementation<F>
   Object.defineProperty(implementation, 'run', {
     configurable: false,
     enumerable: false,
