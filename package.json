@@ -8,7 +8,7 @@
     "examples/*"
   ],
   "scripts": {
-    "build": "bun run --filter './packages/*' build",
+    "build": "bun run --filter brickflow build && bun run --filter '@brickflow/*' build",
     "changeset": "changeset",
     "clean": "rm -rf packages/*/dist examples/*/dist coverage",
     "format": "biome format --write .",
