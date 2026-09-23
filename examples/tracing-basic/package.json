@@ -9,6 +9,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@brickflow/plugin-otel": "workspace:*",
     "brickflow": "workspace:*"
   }
 }

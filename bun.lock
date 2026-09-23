@@ -27,6 +27,14 @@
         "brickflow": "workspace:*",
       },
     },
+    "examples/tracing-basic": {
+      "name": "@brickflow-example/tracing-basic",
+      "version": "0.0.0",
+      "dependencies": {
+        "@brickflow/plugin-otel": "workspace:*",
+        "brickflow": "workspace:*",
+      },
+    },
     "examples/user-session-crud": {
       "name": "@brickflow-example/user-session-crud",
       "version": "0.0.0",
@@ -96,6 +104,8 @@
     "@brickflow-example/basic": ["@brickflow-example/basic@workspace:examples/basic"],
 
     "@brickflow-example/code-agent": ["@brickflow-example/code-agent@workspace:examples/code-agent"],
+
+    "@brickflow-example/tracing-basic": ["@brickflow-example/tracing-basic@workspace:examples/tracing-basic"],
 
     "@brickflow-example/user-session-crud": ["@brickflow-example/user-session-crud@workspace:examples/user-session-crud"],
 

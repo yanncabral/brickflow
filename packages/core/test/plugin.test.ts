@@ -19,6 +19,11 @@ type ChildBrick = Brick<{
   errors: 'missing'
 }>
 
+type PureBrick = Brick<{
+  params: { id: string }
+  result: string
+}>
+
 type ParentBrick = Brick<{
   params: { id: string }
   result: string
@@ -235,7 +240,7 @@ describe('Brick plugins', () => {
         events.push(`finally:${exit.kind}`)
       }
     }
-    const ok = brick<ChildBrick>({ plugins: [explosive] }, ({ id }) => `hello ${id}`)
+    const ok = brick<PureBrick>({ plugins: [explosive] }, ({ id }) => `hello ${id}`)
 
     await expect(Promise.resolve(ok.run({ id: 'ada' }))).resolves.toBe('hello ada')
     expect(events).toEqual(['success-seen', 'finally:success'])
@@ -304,7 +309,7 @@ describe('Brick plugins', () => {
         events.push(`finally:${exit.kind}`)
       }
     }
-    const ok = brick<ChildBrick>({ plugins: [explosive] }, ({ id }) => `hello ${id}`)
+    const ok = brick<PureBrick>({ plugins: [explosive] }, ({ id }) => `hello ${id}`)
 
     await expect(Promise.resolve(ok.run({ id: 'ada' }))).resolves.toBe('hello ada')
     expect(events).toEqual(['finally:success'])
@@ -336,7 +341,7 @@ describe('Brick plugins', () => {
         events.push(`healthy:finally:${exit.kind}`)
       }
     }
-    const ok = brick<ChildBrick>({ plugins: [broken, healthy] }, ({ id }) => `hello ${id}`)
+    const ok = brick<PureBrick>({ plugins: [broken, healthy] }, ({ id }) => `hello ${id}`)
 
     await expect(Promise.resolve(ok.run({ id: 'ada' }))).resolves.toBe('hello ada')
     expect(events).toEqual(['healthy:start', 'healthy:success', 'healthy:finally:success'])
