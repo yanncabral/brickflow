@@ -1,0 +1,36 @@
+{
+  "name": "@brickflow/plugin-otel",
+  "version": "0.0.0",
+  "private": true,
+  "description": "OpenTelemetry tracing plugin for Brick executions (zero-dep core + optional @opentelemetry/api adapter).",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./otel-adapter": {
+      "types": "./dist/otel-adapter.d.ts",
+      "import": "./dist/otel-adapter.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "test": "bun test",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "@opentelemetry/api": "^1.9.0"
+  },
+  "peerDependenciesMeta": {
+    "@opentelemetry/api": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "brickflow": "workspace:*"
+  }
+}

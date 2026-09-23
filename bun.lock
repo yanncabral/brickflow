@@ -36,7 +36,7 @@
     },
     "packages/core": {
       "name": "brickflow",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "ts-pattern": "^5.8.0",
       },
@@ -48,6 +48,23 @@
         "brickflow": "workspace:*",
         "openworkflow": "^0.9.2",
       },
+      "devDependencies": {
+        "@brickflow/plugin-otel": "workspace:*",
+      },
+    },
+    "packages/plugin-otel": {
+      "name": "@brickflow/plugin-otel",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@opentelemetry/api": "^1.9.0",
+        "brickflow": "workspace:*",
+      },
+      "peerDependencies": {
+        "@opentelemetry/api": "^1.9.0",
+      },
+      "optionalPeers": [
+        "@opentelemetry/api",
+      ],
     },
     "packages/testing": {
       "name": "@brickflow/testing",
@@ -83,6 +100,8 @@
     "@brickflow-example/user-session-crud": ["@brickflow-example/user-session-crud@workspace:examples/user-session-crud"],
 
     "@brickflow/engine-openworkflow": ["@brickflow/engine-openworkflow@workspace:packages/engine-openworkflow"],
+
+    "@brickflow/plugin-otel": ["@brickflow/plugin-otel@workspace:packages/plugin-otel"],
 
     "@brickflow/testing": ["@brickflow/testing@workspace:packages/testing"],
 
@@ -187,6 +206,8 @@
     "@manypkg/tools": ["@manypkg/tools@2.1.2", "", { "dependencies": { "jju": "^1.4.0", "tinyglobby": "^0.2.13", "yaml": "^2.9.0" } }, "sha512-6QEf6yqFbETdwGITKq57aYoPfX/3K8XFNwsAlx0C1M7o8cb79sv1M3w+tWuWvIcSbNqrLF7OD7YpZMVVz335hQ=="],
 
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "", { "os": "linux", "cpu": "x64" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
+
+    "@opentelemetry/api": ["@opentelemetry/api@1.9.1", "", {}, "sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q=="],
 
     "@pnpm/deps.graph-sequencer": ["@pnpm/deps.graph-sequencer@1100.0.1", "", {}, "sha512-pOr5+q1fLYKwFN3LAJuGZEnfXDcQ73zqgDHMtGy+K+uIoUqyY+6MeDCWFwfu+4EFuq76I5EPFofoNAI+Bmmq4A=="],
 

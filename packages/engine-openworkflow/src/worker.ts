@@ -4,9 +4,15 @@ import type {
   EngineExecutionResult,
   EngineSignalRequest,
   EngineStatus,
+  EngineStepRunner,
   Worker
 } from 'brickflow'
-import { OpenWorkflow, type Worker as OpenWorkflowRunner, type Workflow } from 'openworkflow'
+import {
+  OpenWorkflow,
+  type Worker as OpenWorkflowRunner,
+  type RetryPolicy,
+  type Workflow
+} from 'openworkflow'
 import type { Backend, WorkflowRun } from 'openworkflow/internal'
 import { BackendSqlite } from 'openworkflow/sqlite'
 import {
@@ -22,12 +28,22 @@ import {
   rehydrateDefect,
   toDurableEnvelope
 } from './serialization'
-import { toStepName } from './step-name'
 
 /** Workflow input persisted with each brick run. Must stay JSON-serializable. */
 export interface BrickRunInput {
   readonly runId: string
-  readonly step: string
+}
+
+/**
+ * Narrow OpenWorkflow step surface used for per-brick checkpoints. Core
+ * stays engine-neutral (`EngineStepRunner`); this adapter binds it to
+ * `step.run` at workflow-execution time.
+ */
+export interface BrickStepApi {
+  run<Output>(
+    config: { readonly name: string; readonly retryPolicy?: Partial<RetryPolicy> },
+    fn: () => Promise<Output>
+  ): Promise<Output>
 }
 
 export type OpenWorkflowBackendOption =
@@ -49,14 +65,23 @@ export interface OpenWorkflowWorkerOptions {
   readonly resultPollIntervalMs?: number
   /** Max wait for a run result in ms. Defaults to 30000. */
   readonly resultTimeoutMs?: number
+  /**
+   * Retry policy for per-brick steps. Defaults to `{ maximumAttempts: 1 }`
+   * (fail fast, matching the previous single-step behavior). Configure
+   * `maximumAttempts > 1` to resume interrupted graphs: a crashed step is
+   * retried in a fresh pass where completed bricks resolve from their
+   * checkpoints instead of re-executing.
+   */
+  readonly stepRetryPolicy?: Partial<RetryPolicy>
 }
 
 const DEFAULT_WORKFLOW_NAME = 'brickflow/brick-run'
 const IDEMPOTENCY_PREFIX = 'brickflow-run:'
 const DEFAULT_POLL_INTERVAL_MS = 25
 const DEFAULT_RESULT_TIMEOUT_MS = 30_000
+const DEFAULT_STEP_RETRY_POLICY: Partial<RetryPolicy> = { maximumAttempts: 1 }
 
-type PendingExecutor = () => Promise<DurableEnvelope>
+type PendingExecutor = (step: BrickStepApi) => Promise<DurableEnvelope>
 
 /**
  * In-process brick closures keyed by run id. Completed runs resume from the
@@ -73,10 +98,24 @@ function unregisterPendingExecutor(runId: string, executor: PendingExecutor): vo
   if (pendingExecutors.get(runId) === executor) pendingExecutors.delete(runId)
 }
 
-function invokePendingExecutor(runId: string): Promise<DurableEnvelope> {
+function invokePendingExecutor(runId: string, step: BrickStepApi): Promise<DurableEnvelope> {
   const executor = pendingExecutors.get(runId)
   if (executor === undefined) throw new MissingOpenWorkflowExecutorError(runId)
-  return executor()
+  return executor(step)
+}
+
+/**
+ * Unwrap OpenWorkflow's internal step error to the brick defect that caused
+ * it, so drivers observe the original thrown error instead of engine
+ * internals. Non-step errors pass through untouched.
+ */
+function unwrapStepError(error: unknown): unknown {
+  if (typeof error !== 'object' || error === null) return error
+  const candidate = error as { readonly name?: unknown; readonly originalError?: unknown }
+  if (candidate.name === 'StepError' && 'originalError' in candidate) {
+    return candidate.originalError
+  }
+  return error
 }
 
 function isBackend(value: OpenWorkflowBackendOption): value is Backend {
@@ -182,14 +221,31 @@ class OpenWorkflowRun<Result, Failure> implements EngineExecutionHandle<Result, 
   }
 
   private async drive(): Promise<EngineExecutionResult<Result, Failure>> {
-    const stepName = toStepName(this.request.brickId, this.request.id)
-    const executor: PendingExecutor = async () => {
+    const executor: PendingExecutor = async (step) => {
+      // Fresh pass state: the workflow function invokes the executor once
+      // per pass, so in-pass results and defects never leak across passes.
+      this.exactResult = undefined
+      this.exactDefect = undefined
+      this.hasExactDefect = false
+      // Bind one durable step per Brick node. Core names each step from the
+      // node's durable identity; completed steps resolve from the journal
+      // without re-running the handler or its plugin lifecycle. The casts
+      // below hold because core only passes node outcomes through this hook.
+      const bindStep: EngineStepRunner = <Result>(
+        name: string,
+        run: () => Promise<Result>
+      ): Promise<Result> =>
+        step.run<Result>({ name, retryPolicy: this.owner.stepRetryPolicy }, async () => {
+          const outcome = await run()
+          return toDurableEnvelope(outcome as EngineExecutionResult<unknown, unknown>) as Result
+        })
+      this.request.step = bindStep
       try {
         const outcome = await this.request.execute()
         this.exactResult = outcome
         return toDurableEnvelope(outcome)
       } catch (error) {
-        this.exactDefect = error
+        this.exactDefect = unwrapStepError(error)
         this.hasExactDefect = true
         throw error
       }
@@ -200,7 +256,7 @@ class OpenWorkflowRun<Result, Failure> implements EngineExecutionHandle<Result, 
       if (this.cancelled !== undefined) throw this.cancelled
       const owHandle = await this.owner.client.runWorkflow(
         this.owner.spec,
-        { runId: this.request.id, step: stepName },
+        { runId: this.request.id },
         { idempotencyKey: `${IDEMPOTENCY_PREFIX}${this.request.id}` }
       )
       this.owRunId = owHandle.workflowRun.id
@@ -263,12 +319,19 @@ class OpenWorkflowRun<Result, Failure> implements EngineExecutionHandle<Result, 
 /**
  * Durable `Worker` backed by OpenWorkflow.
  *
- * Each engine request becomes one OpenWorkflow run with a single durable
- * step named from the Layer-bound `brickId` (or the run id for direct
- * runs). Typed failures persist as `{ ok: false, error }` step-output data;
- * unexpected defects fail the run and reject the handle. Replays of a
- * completed run id resolve from the persisted checkpoint without
- * re-executing the brick, so `replay: 'skip'` plugins never re-emit.
+ * Each engine request becomes one OpenWorkflow run with one durable step per
+ * Brick node, named deterministically from the node's durable identity
+ * (`brickflow/<brickId-or-path>`, see core's `toDurableStepName`). Typed
+ * failures persist as `{ ok: false, error }` step-output data; unexpected
+ * defects fail the step and reject the handle with the original error.
+ *
+ * Resume: re-driving the same run id replays the graph from the root, but
+ * checkpointed steps resolve from the journal without re-running their
+ * handlers or plugin lifecycle — only pending bricks execute. Completed-run
+ * replays resolve without executing anything, so `replay: 'skip'` plugins
+ * never re-emit. Step retries (`stepRetryPolicy`) cover crashes that leave
+ * the run non-terminal; cross-process death relies on lease expiry
+ * re-drive, which replays the same journal.
  */
 export class OpenWorkflowWorker implements Worker {
   readonly backend: Backend
@@ -276,6 +339,7 @@ export class OpenWorkflowWorker implements Worker {
   readonly spec: Workflow<BrickRunInput, DurableEnvelope, BrickRunInput>['spec']
   readonly resultPollIntervalMs: number
   readonly resultTimeoutMs: number
+  readonly stepRetryPolicy: Partial<RetryPolicy>
   private readonly ownsBackend: boolean
   private readonly concurrency: number
   private readonly runIds = new Set<string>()
@@ -301,15 +365,13 @@ export class OpenWorkflowWorker implements Worker {
     const workflowName = options.workflowName ?? DEFAULT_WORKFLOW_NAME
     const workflow = this.client.defineWorkflow<BrickRunInput, DurableEnvelope>(
       { name: workflowName, retryPolicy: { maximumAttempts: 1 } },
-      async ({ input, step }) =>
-        step.run({ name: input.step, retryPolicy: { maximumAttempts: 1 } }, () =>
-          invokePendingExecutor(input.runId)
-        )
+      async ({ input, step }) => invokePendingExecutor(input.runId, step)
     )
     this.spec = workflow.workflow.spec
     this.concurrency = options.concurrency ?? 1
     this.resultPollIntervalMs = options.resultPollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS
     this.resultTimeoutMs = options.resultTimeoutMs ?? DEFAULT_RESULT_TIMEOUT_MS
+    this.stepRetryPolicy = options.stepRetryPolicy ?? DEFAULT_STEP_RETRY_POLICY
   }
 
   start<Result, Failure>(
