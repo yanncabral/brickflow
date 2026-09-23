@@ -5,14 +5,14 @@ import {
   brick,
   type EngineExecutionRequest,
   ExecutionContext,
-  Layer
+  Layer,
+  toDurableStepName
 } from 'brickflow'
 import { BackendSqlite } from 'openworkflow/sqlite'
 import {
   DuplicateOpenWorkflowRunIdError,
   OpenWorkflowRunCancelledError,
-  OpenWorkflowWorker,
-  toStepName
+  OpenWorkflowWorker
 } from '../src/index'
 
 function testContext(callId: string): ExecutionContext {
@@ -70,13 +70,13 @@ afterEach(async () => {
   }
 })
 
-describe('toStepName', () => {
+describe('toDurableStepName', () => {
   test('derives a deterministic durable step name from the brickId', () => {
-    expect(toStepName('app.users.getUser', 'run-1')).toBe('brickflow/app.users.getUser')
+    expect(toDurableStepName('app.users.getUser', 'run-1')).toBe('brickflow/app.users.getUser')
   })
 
   test('falls back to the run id for direct runs without brickId', () => {
-    expect(toStepName(undefined, 'run-1')).toBe('brickflow/run-1')
+    expect(toDurableStepName(undefined, 'run-1')).toBe('brickflow/run-1')
   })
 })
 

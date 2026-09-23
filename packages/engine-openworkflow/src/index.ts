@@ -13,9 +13,9 @@ export {
   type SerializedDefect,
   toDurableEnvelope
 } from './serialization'
-export { BRICKFLOW_STEP_PREFIX, toStepName } from './step-name'
 export {
   type BrickRunInput,
+  type BrickStepApi,
   type OpenWorkflowBackendOption,
   OpenWorkflowWorker,
   type OpenWorkflowWorkerOptions

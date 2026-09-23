@@ -28,7 +28,8 @@ export type {
   EngineExecutionRequest,
   EngineExecutionResult,
   EngineSignalRequest,
-  EngineStatus
+  EngineStatus,
+  EngineStepRunner
 } from './engine/types'
 export { Layer } from './layer/layer'
 export type {
@@ -82,6 +83,7 @@ export {
   localWorker
 } from './worker/local-worker'
 export { UnhandledBrickFailureError } from './worker/run'
+export { DURABLE_STEP_PREFIX, toDurableStepName } from './worker/step-name'
 export type {
   BrickRun,
   BrickRunControls,

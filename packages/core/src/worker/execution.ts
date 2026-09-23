@@ -12,7 +12,7 @@ import type {
   ResultOf
 } from '../brick/types'
 import { ExecutionContext } from '../engine/execution-context'
-import type { EngineExecutionRequest } from '../engine/types'
+import type { EngineExecutionRequest, EngineStepRunner } from '../engine/types'
 import { assertValidPathSegment } from '../path-segment'
 import {
   emitPluginDefect,
@@ -31,6 +31,7 @@ import type { SignalHandlerChain, UnknownSignalHandlers } from '../signal/types'
 import type { Worker } from './contract'
 import { localWorker } from './local-worker'
 import { createBrickRun } from './run'
+import { toDurableStepName } from './step-name'
 import type { BrickRun, RunMetadata } from './types'
 
 export interface SuppliedDependencyNode {
@@ -61,6 +62,8 @@ interface ExecuteOptions<F extends Brick> {
   readonly metadata?: RunMetadata
   readonly plugins?: readonly BrickPlugin[]
   readonly isReplay?: boolean
+  /** Snapshot of the request's late-bound step runner, taken when execute() runs. */
+  readonly stepRunner?: EngineStepRunner | undefined
 }
 
 interface PluginScope {
@@ -174,33 +177,43 @@ async function executeResolvedBrick<F extends Brick>(
       object,
     (signal) => emitPluginSignal(plugins, pluginContext, signal)
   )
-  let exit: BrickPluginExit | undefined
-  try {
-    await emitPluginStart(plugins, pluginContext)
-    const outcome = await executeBrickImplementation(
-      implementation,
-      params,
-      context.providers as RequirementsOf<F>,
-      dependencies,
-      signals
-    )
-    if (!outcome.ok) {
-      exit = { kind: 'failure', error: outcome.error }
-      await emitPluginFailure(plugins, pluginContext, outcome.error)
+  // The stepped unit is exactly one Brick handler invocation, including its
+  // plugin lifecycle: a durable runner that skips checkpointed steps emits
+  // no plugin events for them either. Without a step runner this wrapper is
+  // transparent and behavior matches unstepped execution exactly.
+  const stepName = toDurableStepName(entry.id, context.callId)
+  const invokeNode = async () => {
+    let exit: BrickPluginExit | undefined
+    try {
+      await emitPluginStart(plugins, pluginContext)
+      const outcome = await executeBrickImplementation(
+        implementation,
+        params,
+        context.providers as RequirementsOf<F>,
+        dependencies,
+        signals
+      )
+      if (!outcome.ok) {
+        exit = { kind: 'failure', error: outcome.error }
+        await emitPluginFailure(plugins, pluginContext, outcome.error)
+        return outcome
+      }
+      exit = { kind: 'success', value: outcome.value }
+      await emitPluginSuccess(plugins, pluginContext, outcome.value)
       return outcome
+    } catch (error) {
+      if (exit === undefined) {
+        exit = { kind: 'defect', error }
+        await emitPluginDefect(plugins, pluginContext, error)
+      }
+      throw error
+    } finally {
+      if (exit !== undefined) await emitPluginFinally(plugins, pluginContext, exit)
     }
-    exit = { kind: 'success', value: outcome.value }
-    await emitPluginSuccess(plugins, pluginContext, outcome.value)
-    return outcome
-  } catch (error) {
-    if (exit === undefined) {
-      exit = { kind: 'defect', error }
-      await emitPluginDefect(plugins, pluginContext, error)
-    }
-    throw error
-  } finally {
-    if (exit !== undefined) await emitPluginFinally(plugins, pluginContext, exit)
   }
+  const stepRunner = options.stepRunner
+  if (stepRunner) return stepRunner(stepName, invokeNode)
+  return invokeNode()
 }
 
 export function executeBrick<F extends Brick>(
@@ -233,7 +246,14 @@ export function executeBrick<F extends Brick>(
     params: options.params,
     ...(options.metadata ? { metadata: options.metadata } : {}),
     context,
-    execute: () => executeResolvedBrick(options.root, options.params, options, context, scope),
+    execute: () =>
+      executeResolvedBrick(
+        options.root,
+        options.params,
+        { ...options, stepRunner: request.step },
+        context,
+        scope
+      ),
     signal: ({ name, request: signalRequest }) => resolveSignal(boundary, name, signalRequest)
   }
   return createBrickRun(worker.start(request))
