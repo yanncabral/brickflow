@@ -1,5 +1,5 @@
 export { P } from 'ts-pattern'
-export type { Brick } from './brick/contract'
+export type { Brick, BrickOptions } from './brick/contract'
 export { brick } from './brick/contract'
 export type {
   BrickExecutionResult,
@@ -52,6 +52,13 @@ export type {
   RemainingErrors,
   SupportedPattern
 } from './matching/types'
+export type {
+  BrickPlugin,
+  BrickPluginContext,
+  BrickPluginExit,
+  BrickPluginReplay,
+  BrickPluginSignalEvent
+} from './plugin/types'
 export { MissingSignalHandlerError, NonBoundarySignalHandlerChainError } from './signal/handler'
 export type {
   BoundarySignalHandler,
