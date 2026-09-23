@@ -1,0 +1,15 @@
+{
+  "name": "@brickflow-example/tracing-basic",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "test": "bun test",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@brickflow/plugin-otel": "workspace:*",
+    "brickflow": "workspace:*"
+  }
+}

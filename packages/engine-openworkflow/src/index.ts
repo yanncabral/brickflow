@@ -1,2 +1,22 @@
-/** Package boundary placeholder. Public API implementation will be added test-first. */
-export const packageName = '@brickflow/engine-openworkflow' as const
+export {
+  DuplicateOpenWorkflowRunIdError,
+  MissingOpenWorkflowExecutorError,
+  OpenWorkflowRunCancelledError,
+  OpenWorkflowRunTimeoutError,
+  OpenWorkflowWorkerClosedError
+} from './errors'
+export {
+  type DurableEnvelope,
+  fromDurableEnvelope,
+  type JsonValue,
+  rehydrateDefect,
+  type SerializedDefect,
+  toDurableEnvelope
+} from './serialization'
+export {
+  type BrickRunInput,
+  type BrickStepApi,
+  type OpenWorkflowBackendOption,
+  OpenWorkflowWorker,
+  type OpenWorkflowWorkerOptions
+} from './worker'
