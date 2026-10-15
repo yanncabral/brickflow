@@ -88,9 +88,8 @@ class LayerImplementation<
     targetId: string
   ): unknown {
     const layer = this
-    const bound = {
-      handler: entry.handler,
-      run(
+    const bound = Object.assign(
+      function run(
         params: unknown,
         options?: {
           readonly requirements?: Readonly<Record<string, unknown>>
@@ -182,8 +181,10 @@ class LayerImplementation<
             ? { metadata: options.metadata as Readonly<Record<string, unknown>> }
             : {})
         })
-      }
-    }
+      },
+      { handler: entry.handler }
+    )
+    Object.defineProperty(bound, 'run', { value: bound })
     markBrickImplementation(bound)
     return Object.freeze(bound)
   }

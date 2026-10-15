@@ -1,7 +1,13 @@
 import type { SignalDefinitions } from '../signal/types'
 import { runDirectBrick } from '../worker/execution'
 import { markBrickImplementation } from './implementation'
-import type { BrickHandler, BrickImplementation, ValidBrick } from './types'
+import type {
+  BrickHandler,
+  BrickImplementation,
+  BrickRunOptionArgs,
+  ParamsOf,
+  ValidBrick
+} from './types'
 
 interface BrickConfig {
   params: unknown
@@ -17,19 +23,15 @@ export type Brick<Config extends BrickConfig = BrickConfig> = Config
 export function brick<F extends Brick>(
   handler: F extends ValidBrick<F> ? BrickHandler<F> : never
 ): BrickImplementation<F> {
-  const implementation = { handler } as unknown as BrickImplementation<F>
+  const implementation = Object.assign(
+    (params: ParamsOf<F>, ...options: BrickRunOptionArgs<F>) =>
+      runDirectBrick(implementation, params, options[0] as never),
+    { handler }
+  ) as unknown as BrickImplementation<F>
   Object.defineProperty(implementation, 'run', {
     configurable: false,
     enumerable: false,
-    value: (
-      params: Parameters<BrickImplementation<F>['run']>[0],
-      ...options: Parameters<BrickImplementation<F>['run']> extends readonly [
-        unknown,
-        ...infer Rest
-      ]
-        ? Rest
-        : never
-    ) => runDirectBrick(implementation, params, options[0] as never),
+    value: implementation,
     writable: false
   })
   markBrickImplementation(implementation)

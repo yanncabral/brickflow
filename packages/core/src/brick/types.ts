@@ -236,6 +236,10 @@ export type BrickRunOptionArgs<F extends Brick> = keyof EffectiveRequirementsOf<
   : readonly [options: BrickRunOptions<F>]
 
 export interface BrickImplementation<F extends Brick = Brick> {
+  (
+    params: ParamsOf<F>,
+    ...options: BrickRunOptionArgs<F>
+  ): BrickRun<EffectiveErrorsOf<F>, ResultOf<F>>
   readonly handler: BrickHandler<F>
   run(
     params: ParamsOf<F>,

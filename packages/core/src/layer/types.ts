@@ -516,6 +516,10 @@ export type BoundBrick<
   Provided extends Providers,
   BrickPath extends readonly PropertyKey[]
 > = {
+  (
+    params: ParamsOf<F>,
+    ...options: BoundBrickRunOptionArgs<F, RootId, RootEntries, ScopeEntries, Provided, BrickPath>
+  ): BrickRun<EffectiveErrorsOf<F>, ResultOf<F>>
   readonly handler: BrickImplementation<F>['handler']
   run(
     params: ParamsOf<F>,

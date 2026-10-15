@@ -26,7 +26,7 @@ export function markBrickImplementation(target: object): void {
 
 export function isBrickImplementation(value: unknown): value is BrickImplementation {
   return (
-    typeof value === 'object' &&
+    (typeof value === 'object' || typeof value === 'function') &&
     value !== null &&
     Object.hasOwn(value, implementationBrand) &&
     (value as BrandedImplementation)[implementationBrand] === true

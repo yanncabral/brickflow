@@ -735,3 +735,34 @@ const worker: Worker = {
 }
 void worker
 void ({} as Empty)
+
+// Callable Bricks retain all direct and Layer-bound configuration requirements.
+const callablePlain: number = await plain({ value: 1 })
+void callablePlain
+const callableConfigured: string = await configured(
+  { id: 'ada' },
+  {
+    requirements: { repository, logger },
+    dependencies: {
+      child: { brick: child, dependencies: { grandchild: { brick: grandchild } } }
+    }
+  }
+)
+void callableConfigured
+// @ts-expect-error direct calls require transitive requirements and dependencies
+configured({ id: 'ada' })
+// @ts-expect-error direct calls require the complete dependency graph
+configured({ id: 'ada' }, { requirements: { repository, logger }, dependencies: {} })
+// @ts-expect-error direct calls require declared signal handlers
+signalled({ id: 'ada' })
+signalled({ id: 'ada' }, { signals: { approve: ({ id }) => id === 'ada' } })
+const callableBound: string = await complete.configured({ id: 'ada' })
+void callableBound
+// @ts-expect-error bound calls require unresolved requirements and dependencies
+partial.configured({ id: 'ada' })
+// @ts-expect-error bound calls require declared signal handlers
+signalledLayer.signalled({ id: 'ada' })
+signalledLayer.signalled(
+  { id: 'ada' },
+  { signals: { signals: { signalled: { approve: ({ id }) => id === 'ada' } } } }
+)

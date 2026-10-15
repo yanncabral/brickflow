@@ -93,15 +93,18 @@ export interface BrickRunControls {
   cancel(reason?: string): Promise<void>
 }
 
-export interface IncompleteBrickRun<
-  Error,
-  InitialSuccess,
-  LocalResult = InitialSuccess,
-  RemainingError = Error
-> extends BrickRunControls {
-  readonly unhandledErrors: RemainingError
-  readonly then: (invalidOnFulfilled: never) => never
-  with<const Pattern extends SupportedPattern<RemainingError>, HandlerResult>(
+interface BrickRunHandlers<Error, InitialSuccess, LocalResult, RemainingError, RecoveredResult> {
+  /** Transforms the original Brick success; never receives a failure handler's return value. */
+  onSuccess<HandlerResult>(
+    handler: (value: InitialSuccess) => HandlerResult
+  ): BrickRun<
+    Error,
+    InitialSuccess,
+    Awaited<HandlerResult> | RecoveredResult,
+    RemainingError,
+    RecoveredResult
+  >
+  onFailure<const Pattern extends SupportedPattern<RemainingError>, HandlerResult>(
     pattern: Pattern extends readonly unknown[] ? never : Pattern,
     handler: (
       error: MatchedError<RemainingError, Pattern>
@@ -110,24 +113,46 @@ export interface IncompleteBrickRun<
     Error,
     InitialSuccess,
     LocalResult | RecoveryValue<HandlerResult>,
-    RemainingErrors<RemainingError, Pattern, HandlerResult>
+    RemainingErrors<RemainingError, Pattern, HandlerResult>,
+    RecoveredResult | RecoveryValue<HandlerResult>
   >
+  /** Alias for onFailure. */
+  with: BrickRunHandlers<
+    Error,
+    InitialSuccess,
+    LocalResult,
+    RemainingError,
+    RecoveredResult
+  >['onFailure']
 }
 
-export interface CompleteBrickRun<Error, InitialSuccess, LocalResult = InitialSuccess>
-  extends BrickRunControls,
-    PromiseLike<LocalResult> {
-  with<const Pattern extends SupportedPattern<never>, HandlerResult>(
-    pattern: Pattern extends readonly unknown[] ? never : Pattern,
-    handler: (error: MatchedError<never, Pattern>) => HandlerResult | Promise<HandlerResult>
-  ): BrickRun<Error, InitialSuccess, LocalResult | RecoveryValue<HandlerResult>, never>
+export interface IncompleteBrickRun<
+  Error,
+  InitialSuccess,
+  LocalResult = InitialSuccess,
+  RemainingError = Error,
+  RecoveredResult = Exclude<LocalResult, InitialSuccess>
+> extends BrickRunControls,
+    BrickRunHandlers<Error, InitialSuccess, LocalResult, RemainingError, RecoveredResult> {
+  readonly unhandledErrors: RemainingError
+  readonly then: (invalidOnFulfilled: never) => never
 }
+
+export interface CompleteBrickRun<
+  Error,
+  InitialSuccess,
+  LocalResult = InitialSuccess,
+  RecoveredResult = Exclude<LocalResult, InitialSuccess>
+> extends BrickRunControls,
+    BrickRunHandlers<Error, InitialSuccess, LocalResult, never, RecoveredResult>,
+    PromiseLike<LocalResult> {}
 
 export type BrickRun<
   Error,
   InitialSuccess,
   LocalResult = InitialSuccess,
-  RemainingError = Error
+  RemainingError = Error,
+  RecoveredResult = Exclude<LocalResult, InitialSuccess>
 > = [RemainingError] extends [never]
-  ? CompleteBrickRun<Error, InitialSuccess, LocalResult>
-  : IncompleteBrickRun<Error, InitialSuccess, LocalResult, RemainingError>
+  ? CompleteBrickRun<Error, InitialSuccess, LocalResult, RecoveredResult>
+  : IncompleteBrickRun<Error, InitialSuccess, LocalResult, RemainingError, RecoveredResult>
