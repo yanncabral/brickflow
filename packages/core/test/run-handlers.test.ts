@@ -17,8 +17,8 @@ describe('Brick run handlers', () => {
       const initial = read.run({ missing })
       const success = async (asset: { id: string }) => ({ ok: true as const, asset })
       const failure = () => ({ ok: false as const, response: 404 })
-      const before = initial.onSuccess(success).onFailure({ type: 'missing' }, failure)
-      const after = initial.onFailure({ type: 'missing' }, failure).onSuccess(success)
+      const before = initial.onSuccess(success).onError({ type: 'missing' }, failure)
+      const after = initial.onError({ type: 'missing' }, failure).onSuccess(success)
       const expected = missing
         ? { ok: false as const, response: 404 }
         : { ok: true as const, asset: { id: 'asset' } }
@@ -29,7 +29,7 @@ describe('Brick run handlers', () => {
 
   test('memoizes async success handlers and keeps derived chains independent', async () => {
     let calls = 0
-    const original = read.run({ missing: false }).onFailure(P._, () => 'fallback')
+    const original = read.run({ missing: false }).onError(P._, () => 'fallback')
     const mapped = original.onSuccess(async (asset) => {
       calls++
       return asset.id
@@ -38,6 +38,12 @@ describe('Brick run handlers', () => {
     expect(await mapped).toBe('asset')
     expect(calls).toBe(1)
     expect(await original).toEqual({ id: 'asset' })
+  })
+
+  test('preserves the published onFailure alias alongside onError', async () => {
+    const run = read({ missing: true }).onSuccess((asset) => asset.id)
+    expect(await run.onFailure({ type: 'missing' }, (error) => error.id)).toBe('asset')
+    expect(await run.onError({ type: 'missing' }, (error) => error.id)).toBe('asset')
   })
 
   test('preserves with as an alias and permits undefined success results', async () => {
@@ -64,7 +70,7 @@ describe('Brick run handlers', () => {
         successCalls++
         return 'success'
       })
-      .onFailure(P._, async () => undefined)
+      .onError(P._, async () => undefined)
       .with(P._, () => {
         laterCalls++
         return 'fallback'
@@ -72,16 +78,14 @@ describe('Brick run handlers', () => {
     await expect(Promise.resolve(run)).rejects.toBeInstanceOf(UnhandledBrickFailureError)
     expect(successCalls).toBe(0)
     expect(laterCalls).toBe(0)
-    expect(await read.run({ missing: true }).onFailure(P._, async (error) => error.id)).toBe(
-      'asset'
-    )
+    expect(await read.run({ missing: true }).onError(P._, async (error) => error.id)).toBe('asset')
   })
 
   test('replaces success handlers without composing transformations', async () => {
     let replacedCalls = 0
     const original = read
       .run({ missing: false })
-      .onFailure(P._, () => 404)
+      .onError(P._, () => 404)
       .onSuccess(() => {
         replacedCalls++
         return 'first'
@@ -102,25 +106,25 @@ describe('Brick run handlers', () => {
     ).rejects.toThrow('execution defect')
     const onSuccess = read
       .run({ missing: false })
-      .onFailure(P._, () => 404)
+      .onError(P._, () => 404)
       .onSuccess(() => {
         throw new Error('success defect')
       })
     await expect(Promise.resolve(onSuccess)).rejects.toThrow('success defect')
-    const onFailure = read.run({ missing: true }).onFailure(P._, () => {
+    const onError = read.run({ missing: true }).onError(P._, () => {
       throw new Error('failure defect')
     })
-    await expect(Promise.resolve(onFailure)).rejects.toThrow('failure defect')
+    await expect(Promise.resolve(onError)).rejects.toThrow('failure defect')
   })
 })
 
 describe('callable Bricks', () => {
   test('supports direct calls and run with identical execution controls', async () => {
     const worker = new LocalWorker()
-    const direct = read({ missing: false }, { worker, id: 'direct' }).onFailure(P._, () => null)
+    const direct = read({ missing: false }, { worker, id: 'direct' }).onError(P._, () => null)
     const explicit = read
       .run({ missing: false }, { worker, id: 'explicit' })
-      .onFailure(P._, () => null)
+      .onError(P._, () => null)
     expect(direct.id).toBe('direct')
     expect(await direct).toEqual(await explicit)
     expect(await direct.status()).toBe('completed')

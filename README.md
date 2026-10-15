@@ -34,7 +34,7 @@ const getUser = brick<GetUserBrick>(
 const users = new Layer('users', { getUser }).provide({ userRepository })
 const user = await users.getUser({ id: 'ada' })
   .onSuccess((user) => ({ ok: true as const, user }))
-  .onFailure('user-not-found', () => ({ ok: false as const, status: 404 }))
+  .onError('user-not-found', () => ({ ok: false as const, status: 404 }))
 
 if (user.ok) {
   console.log(user.user.name)
@@ -47,7 +47,7 @@ Autocomplete covers `params`, `result`, `errors`, `requires`, `depends`, and `si
 
 Bricks are callable as `getUser(params, options)` or `getUser.run(params, options)`. Both forms return the same kind of run with execution controls and typed handlers. Supply `requirements`, recursive `{ brick, dependencies? }` dependency nodes, and signal handlers through `options`; Layers pre-bind reusable providers and resolve matching dependency aliases.
 
-`onSuccess(handler)` transforms only the original Brick success, regardless of its position relative to failure handlers. `onFailure(pattern, handler)` recovers a declared domain failure; `.with(pattern, handler)` remains an alias. The awaited value is the union of the success and recovery return values, so handlers can return an explicit discriminator such as `ok` to distinguish them. Both handlers support async returns. An `undefined` recovery leaves the failure unhandled, while an `undefined` success is valid. All declared failures must be handled before a run can be awaited. Unexpected exceptions reject the run.
+`onSuccess(handler)` transforms only the original Brick success, regardless of its position relative to failure handlers. `onError(pattern, handler)` recovers a declared domain failure; `.with(pattern, handler)` remains an alias. The deprecated `onFailure` alias from version 0.0.3 remains available for compatibility. The awaited value is the union of the success and recovery return values, so handlers can return an explicit discriminator such as `ok` to distinguish them. Both handlers support async returns. An `undefined` recovery leaves the failure unhandled, while an `undefined` success is valid. All declared failures must be handled before a run can be awaited. Unexpected exceptions reject the run.
 
 Chains are immutable. Registering another `onSuccess` replaces the previous success handler; it still receives the original Brick result. Failure patterns are checked in registration order, and the first match handles the failure.
 

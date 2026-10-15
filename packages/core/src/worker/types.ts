@@ -104,7 +104,7 @@ interface BrickRunHandlers<Error, InitialSuccess, LocalResult, RemainingError, R
     RemainingError,
     RecoveredResult
   >
-  onFailure<const Pattern extends SupportedPattern<RemainingError>, HandlerResult>(
+  onError<const Pattern extends SupportedPattern<RemainingError>, HandlerResult>(
     pattern: Pattern extends readonly unknown[] ? never : Pattern,
     handler: (
       error: MatchedError<RemainingError, Pattern>
@@ -116,14 +116,22 @@ interface BrickRunHandlers<Error, InitialSuccess, LocalResult, RemainingError, R
     RemainingErrors<RemainingError, Pattern, HandlerResult>,
     RecoveredResult | RecoveryValue<HandlerResult>
   >
-  /** Alias for onFailure. */
+  /** @deprecated Use onError to match the Brick contract's errors field. */
+  onFailure: BrickRunHandlers<
+    Error,
+    InitialSuccess,
+    LocalResult,
+    RemainingError,
+    RecoveredResult
+  >['onError']
+  /** Alias for onError. */
   with: BrickRunHandlers<
     Error,
     InitialSuccess,
     LocalResult,
     RemainingError,
     RecoveredResult
-  >['onFailure']
+  >['onError']
 }
 
 export interface IncompleteBrickRun<
