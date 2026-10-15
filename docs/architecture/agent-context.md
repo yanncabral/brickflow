@@ -215,6 +215,21 @@ Brick execution forwards ID, optional metadata, and optional Layer-bound `brickI
 
 `onSuccess` receives the original Brick result regardless of its position relative to failure handlers. Recovery results bypass `onSuccess`. Awaiting yields the union of success and recovery results; consumers can return discriminated values to distinguish the branches. Success and recovery types are tracked separately even when their shapes overlap. Chains are immutable and consumption is memoized per chain. A later `onSuccess` replaces an earlier success handler rather than composing transformations. Failure handlers retain registration order and first-match behavior. Handler exceptions remain defects.
 
+Inside a Brick handler, a required function returning a `BrickRun` can be awaited directly when its remaining failures are included in the enclosing Brick's declared `errors`:
+
+```ts
+type ImportRequest = Brick<{
+  params: ImportInput
+  result: ImportResult
+  errors: ImportFailure
+  requires: { importer: (input: ImportInput) => BrickRun<ImportFailure, ImportResult> }
+}>
+
+const importRequest = brick<ImportRequest>(async (input, { importer }) => await importer(input))
+```
+
+Handler requirement types permit that await without changing the injected provider's contract. Unhandled run failures consumed inside a handler propagate as structured domain failures; defects remain rejected defects. Async execution scope keeps this behavior local to handler execution. Consumption outside handlers still requires exhaustive handling and rejects forced unhandled consumption with `UnhandledBrickFailureError`, including when the same run was already consumed inside a handler.
+
 Never collapse typed failure into generic `Error` across durable boundary.
 
 ## Path and key invariants

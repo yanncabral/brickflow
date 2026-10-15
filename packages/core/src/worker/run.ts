@@ -1,4 +1,6 @@
 import { isMatching } from 'ts-pattern'
+import { brickExecutionScope } from '../brick/execution-scope'
+import { failWith } from '../brick/failure'
 import type { EngineExecutionHandle, EngineExecutionResult } from '../engine/types'
 import type { SupportedPattern } from '../matching/types'
 import type { BrickRun } from './types'
@@ -25,6 +27,10 @@ function readableFailure(failure: unknown): string {
   } catch {
     return String(failure)
   }
+}
+
+class UnhandledRunFailure {
+  constructor(readonly failure: unknown) {}
 }
 
 class BrickRunImplementation<Error, InitialSuccess, LocalResult, RemainingError> {
@@ -79,8 +85,15 @@ class BrickRunImplementation<Error, InitialSuccess, LocalResult, RemainingError>
     onfulfilled?: ((value: LocalResult) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
   ): PromiseLike<TResult1 | TResult2> {
+    const propagate = brickExecutionScope.getStore()
     this.#execution ??= this.#execute()
-    return this.#execution.then(onfulfilled, onrejected)
+    return this.#execution
+      .catch((error: unknown) => {
+        if (!(error instanceof UnhandledRunFailure)) throw error
+        if (propagate) return failWith(error.failure)
+        throw new UnhandledBrickFailureError(error.failure)
+      })
+      .then(onfulfilled, onrejected)
   }
 
   async #execute(): Promise<LocalResult> {
@@ -95,10 +108,10 @@ class BrickRunImplementation<Error, InitialSuccess, LocalResult, RemainingError>
       if (!isMatching(registered.pattern)(outcome.error)) continue
       const recovered = await registered.handler(outcome.error as never)
       if (recovered !== undefined) return recovered as LocalResult
-      throw new UnhandledBrickFailureError(outcome.error)
+      throw new UnhandledRunFailure(outcome.error)
     }
 
-    throw new UnhandledBrickFailureError(outcome.error)
+    throw new UnhandledRunFailure(outcome.error)
   }
 }
 

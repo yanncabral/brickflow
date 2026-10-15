@@ -67,3 +67,47 @@ const legacy = initial.onFailure({ type: 'missing' }, (error) => error.id)
 await legacy
 const mixed: { id: string } | string | number = await legacy.onError({ type: 'denied' }, () => 403)
 void mixed
+
+// Required operations may propagate failures declared by the enclosing Brick.
+type ReadOperation = (input: { id: string }) => ReturnType<typeof read>
+type ForwardRead = Brick<{
+  params: { id: string }
+  result: { id: string }
+  errors: Read['errors']
+  requires: { reader: ReadOperation }
+}>
+brick<ForwardRead>(async (input, { reader }) => {
+  const user: { id: string } = await reader(input)
+  return user
+})
+
+brick<
+  Brick<{
+    params: { id: string }
+    result: { id: string }
+    errors: { type: 'missing'; id: string }
+    requires: { reader: ReadOperation }
+  }>
+>(async (input, { reader }) => {
+  // @ts-expect-error denied is not declared by the enclosing Brick
+  await reader(input)
+  return { id: input.id }
+})
+
+// Injection retains the original operation contract and external exhaustiveness.
+const forwardRead = brick<ForwardRead>(async (input, { reader }) => await reader(input))
+const forwarded = forwardRead({ id: 'asset' }, { requirements: { reader: read } })
+// @ts-expect-error the external caller still has to handle the failures
+await forwarded
+
+// Unrelated generic providers retain their signatures.
+brick<
+  Brick<{
+    params: undefined
+    result: number
+    requires: { identity: <Value>(value: Value) => Value }
+  }>
+>((_input, { identity }) => {
+  const value: number = identity(1)
+  return value
+})

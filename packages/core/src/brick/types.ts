@@ -6,7 +6,7 @@ import type {
   SignalFunctions
 } from '../signal/types'
 import type { Worker } from '../worker/contract'
-import type { BrickRun, RunMetadata } from '../worker/types'
+import type { BrickRun, IncompleteBrickRun, RunMetadata } from '../worker/types'
 import type { Brick } from './contract'
 
 type Empty = Record<never, never>
@@ -196,9 +196,41 @@ export interface BrickTools<F extends Brick> {
   readonly signals: SignalsOf<F> extends SignalDefinitions ? SignalFunctions<SignalsOf<F>> : never
 }
 
+type HandlerOperationResult<Result, Errors> =
+  Result extends IncompleteBrickRun<
+    infer Error,
+    infer InitialSuccess,
+    infer LocalResult,
+    infer RemainingError,
+    infer RecoveredResult
+  >
+    ? [RemainingError] extends [Errors]
+      ? Omit<
+          IncompleteBrickRun<Error, InitialSuccess, LocalResult, RemainingError, RecoveredResult>,
+          'then'
+        > &
+          PromiseLike<LocalResult>
+      : Result
+    : Result
+
+type HandlerRequirement<Requirement, Errors> = Requirement extends (
+  ...args: infer Args
+) => infer Result
+  ? Result extends { readonly unhandledErrors: infer RemainingError }
+    ? [RemainingError] extends [Errors]
+      ? ((...args: Args) => HandlerOperationResult<Result, Errors>) &
+          Pick<Requirement, keyof Requirement>
+      : Requirement
+    : Requirement
+  : Requirement
+
+type HandlerRequirements<F extends Brick> = {
+  [Key in keyof RequirementsOf<F>]: HandlerRequirement<RequirementsOf<F>[Key], ErrorsOf<F>>
+}
+
 export type BrickHandler<F extends Brick> = (
   params: ParamsOf<F>,
-  requirements: RequirementsOf<F>,
+  requirements: HandlerRequirements<F>,
   dependencies: DependencyFunctions<F>,
   tools: BrickTools<F>
 ) => ResultOf<F> | Promise<ResultOf<F>>
