@@ -1,5 +1,11 @@
 # brickflow
 
+## 0.0.4
+
+### Patch Changes
+
+- a8ccc34: Use onError as the primary typed error handler, matching the errors field in Brick contracts. Keep onFailure as a deprecated compatibility alias and preserve with as an alias for onError.
+
 ## 0.0.3
 
 ### Patch Changes
