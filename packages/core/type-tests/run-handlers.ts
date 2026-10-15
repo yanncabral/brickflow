@@ -623,3 +623,66 @@ brick<
   operation(1)
   return await operation.call({ prefix: 'x' }, 1)
 })
+
+// An augmented monomorphic callable keeps its properties and becomes awaitable.
+type LabeledOperation = ((value: string) => BrickRun<Read['errors'], string>) & {
+  readonly label: string
+  description?: string
+}
+brick<
+  Brick<{
+    params: undefined
+    result: string
+    errors: Read['errors']
+    requires: { operation: LabeledOperation }
+  }>
+>(async (_input, { operation }) => {
+  const result: string = await operation('text')
+  const label: string = operation.label
+  const description: string | undefined = operation.description
+  const forwarded: LabeledOperation = operation
+  // @ts-expect-error readonly properties remain readonly
+  operation.label = 'changed'
+  // @ts-expect-error argument types remain unchanged
+  operation(1)
+  void label
+  void description
+  void forwarded
+  return result
+})
+brick<
+  Brick<{
+    params: undefined
+    result: undefined
+    requires: { operation: LabeledOperation }
+  }>
+>(async (_input, { operation }) => {
+  // @ts-expect-error properties cannot make undeclared failures awaitable
+  await operation('text')
+  return undefined
+})
+
+// Attached properties must not bypass receiver checks or erase generic inference.
+type LabeledReceiver = ReceiverOperation & { readonly label: string }
+type LabeledGeneric = (<Value>(value: Value) => BrickRun<Read['errors'], { value: Value }>) & {
+  readonly label: string
+}
+brick<
+  Brick<{
+    params: undefined
+    result: string
+    errors: Read['errors']
+    requires: { receiver: LabeledReceiver; generic: LabeledGeneric }
+  }>
+>(async (_input, { receiver, generic }) => {
+  // @ts-expect-error a labeled callable still needs its receiver
+  receiver('text')
+  const result: string = await receiver.call({ prefix: 'x' }, 'text')
+  const genericResult: string = await generic('text')
+    .onError(P._, () => 'fallback')
+    .onSuccess((result) => result.value)
+  const forwarded: LabeledGeneric = generic
+  void genericResult
+  void forwarded
+  return result
+})

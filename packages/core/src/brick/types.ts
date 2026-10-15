@@ -316,8 +316,13 @@ type HandlerRequirement<Requirement, Errors> = Requirement extends (
   this: infer Receiver,
   ...args: infer Args
 ) => infer Result
-  ? SameSignature<Requirement, (this: Receiver, ...args: Args) => Result> extends true
-    ? HandlerSignature<Requirement, Errors>
+  ? SameSignature<
+      Requirement,
+      keyof Requirement extends never
+        ? (this: Receiver, ...args: Args) => Result
+        : ((this: Receiver, ...args: Args) => Result) & Pick<Requirement, keyof Requirement>
+    > extends true
+    ? HandlerSignature<Requirement, Errors> & Pick<Requirement, keyof Requirement>
     : Result extends IncompleteBrickRun<
           infer Error,
           infer _Initial,
