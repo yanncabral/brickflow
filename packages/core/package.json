@@ -4,11 +4,11 @@
   "description": "Typed domain failures, structural dependency injection, composable Layers, Signals, and engine-neutral execution for TypeScript.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yanncabral/flow.git"
+    "url": "git+https://github.com/yanncabral/brickflow.git"
   },
-  "homepage": "https://github.com/yanncabral/flow#readme",
+  "homepage": "https://github.com/yanncabral/brickflow#readme",
   "bugs": {
-    "url": "https://github.com/yanncabral/flow/issues"
+    "url": "https://github.com/yanncabral/brickflow/issues"
   },
   "type": "module",
   "files": [
