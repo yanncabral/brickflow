@@ -213,13 +213,69 @@ type HandlerOperationResult<Result, Errors> =
       : Result
     : Result
 
+type HandlerSignature<Args extends readonly unknown[], Result, Errors> = (
+  ...args: Args
+) => HandlerOperationResult<Result, Errors>
+
+// Rotate overloads into a union before mapping, rather than inferring only the last.
+type OperationSignatures<Operation, Seen = Pick<Operation, keyof Operation>> = Operation extends (
+  ...args: infer Args
+) => infer Result
+  ? Seen extends Operation
+    ? never
+    :
+        | ((...args: Args) => Result)
+        | OperationSignatures<Seen & Operation, Seen & ((...args: Args) => Result)>
+  : never
+
+type ContextualSignature<Signature, Errors> = Signature extends (
+  ...args: infer Args
+) => infer Result
+  ? HandlerSignature<Args, Result, Errors>
+  : never
+
+type HandlerOverloads<Requirement, Errors> = UnionToIntersection<
+  ContextualSignature<OperationSignatures<Requirement>, Errors>
+> &
+  Pick<Requirement, keyof Requirement>
+
+type HasOverloads<Requirement> = Requirement extends {
+  (...args: infer First): unknown
+  (...args: infer Last): unknown
+}
+  ? [First] extends [Last]
+    ? [Last] extends [First]
+      ? false
+      : true
+    : true
+  : false
+
 type HandlerRequirement<Requirement, Errors> = Requirement extends (
   ...args: infer Args
 ) => infer Result
-  ? Result extends { readonly unhandledErrors: infer RemainingError }
+  ? Result extends IncompleteBrickRun<
+      infer Error,
+      infer _Initial,
+      infer _Local,
+      infer RemainingError,
+      infer _Recovered
+    >
     ? [RemainingError] extends [Errors]
-      ? ((...args: Args) => HandlerOperationResult<Result, Errors>) &
-          Pick<Requirement, keyof Requirement>
+      ? HasOverloads<Requirement> extends true
+        ? HandlerOverloads<Requirement, Errors>
+        : ((...args: Args) => Result) & Pick<Requirement, keyof Requirement> extends Requirement
+          ? HandlerOverloads<Requirement, Errors>
+          : Requirement extends <Value extends Args[0]>(
+                value: Value
+              ) => IncompleteBrickRun<Error, Value, Value, RemainingError, never>
+            ? (<Value extends Args[0]>(
+                value: Value
+              ) => HandlerOperationResult<
+                IncompleteBrickRun<Error, Value, Value, RemainingError, never>,
+                Errors
+              >) &
+                Requirement
+            : Requirement
       : Requirement
     : Requirement
   : Requirement

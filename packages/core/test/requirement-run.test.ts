@@ -121,3 +121,57 @@ test('explicit recovery and success handlers remain supported inside handlers', 
     imported: 2
   })
 })
+
+for (const rejects of [false, true]) {
+  test(`detached work loses propagation scope after handler settles (rejects: ${rejects})`, async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let detached!: Promise<unknown>
+    const defect = new Error('parent defect')
+    const parent = brick<Brick<{ params: undefined; result: string }>>(() => {
+      detached = gate.then(async () => {
+        try {
+          await (importer(input) as unknown as PromiseLike<AnkiImportResult>)
+        } catch (error) {
+          return error
+        }
+        return undefined
+      })
+      if (rejects) throw defect
+      return 'done'
+    })
+    if (rejects) await expect(Promise.resolve(parent(undefined))).rejects.toBe(defect)
+    else expect(await parent(undefined)).toBe('done')
+    release()
+    expect(await detached).toBeInstanceOf(UnhandledBrickFailureError)
+  })
+}
+
+test('pending detached consumption checks scope activity when the failure arrives', async () => {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const delayed = brick<
+    Brick<{
+      params: undefined
+      result: number
+      errors: ImportFailure
+    }>
+  >(async (_input, _requirements, _depends, { fail }) => {
+    await gate
+    return fail({ type: 'import_failed' })
+  })
+  let detached!: Promise<unknown>
+  const parent = brick<Brick<{ params: undefined; result: string }>>(() => {
+    detached = Promise.resolve(delayed(undefined) as unknown as PromiseLike<number>).catch(
+      (error: unknown) => error
+    )
+    return 'done'
+  })
+  expect(await parent(undefined)).toBe('done')
+  release()
+  expect(await detached).toBeInstanceOf(UnhandledBrickFailureError)
+})

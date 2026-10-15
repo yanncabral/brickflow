@@ -228,7 +228,7 @@ type ImportRequest = Brick<{
 const importRequest = brick<ImportRequest>(async (input, { importer }) => await importer(input))
 ```
 
-Handler requirement types permit that await without changing the injected provider's contract. Unhandled run failures consumed inside a handler propagate as structured domain failures; defects remain rejected defects. Async execution scope keeps this behavior local to handler execution. Consumption outside handlers still requires exhaustive handling and rejects forced unhandled consumption with `UnhandledBrickFailureError`, including when the same run was already consumed inside a handler.
+Handler requirement types permit that await without changing the injected provider's contract. Overloaded operations retain each call signature and its result. Generic identity operations (`<Value>(value: Value) => BrickRun<Failure, Value>`, including constraints) retain input/output inference; other generic signatures are preserved unchanged and may still require explicit failure handlers. Unhandled run failures consumed inside a handler propagate as structured domain failures; defects remain rejected defects. Async execution scope keeps this behavior local to handler execution and is revoked when that handler settles, including on failure. Detached tasks that outlive the handler use boundary failure behavior, even if they began consuming a run before the handler settled. Consumption outside handlers still requires exhaustive handling and rejects forced unhandled consumption with `UnhandledBrickFailureError`, including when the same run was already consumed inside a handler.
 
 Never collapse typed failure into generic `Error` across durable boundary.
 

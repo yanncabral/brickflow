@@ -1,4 +1,4 @@
-import { type Brick, brick, Layer, P } from '../src/index'
+import { type Brick, type BrickRun, brick, Layer, P } from '../src/index'
 
 type Read = Brick<{
   params: { id: string }
@@ -110,4 +110,117 @@ brick<
 >((_input, { identity }) => {
   const value: number = identity(1)
   return value
+})
+
+// Generic operations keep the relationship between their input and result.
+type GenericReadOperation = <Value>(value: Value) => BrickRun<Read['errors'], Value>
+brick<
+  Brick<{
+    params: undefined
+    result: string
+    errors: Read['errors']
+    requires: { operation: GenericReadOperation }
+  }>
+>(async (_input, { operation }) => {
+  const text: string = await operation('hello')
+  const count: number = await operation(1)
+  void count
+  return text
+})
+
+// All overloads remain callable, with their respective result types.
+type OverloadedReadOperation = {
+  (value: string): BrickRun<Read['errors'], string>
+  (value: number): BrickRun<Read['errors'], number>
+}
+brick<
+  Brick<{
+    params: undefined
+    result: string
+    errors: Read['errors']
+    requires: { operation: OverloadedReadOperation }
+  }>
+>(async (_input, { operation }) => {
+  const text: string = await operation('hello')
+  const count: number = await operation(1)
+  // @ts-expect-error invalid arguments remain invalid
+  operation(true)
+  void count
+  return text
+})
+
+// More complex generic operations retain their original call and handler signatures.
+brick<
+  Brick<{
+    params: undefined
+    result: string
+    errors: Read['errors']
+    requires: {
+      wrap: <Value>(value: Value) => BrickRun<Read['errors'], { value: Value }>
+    }
+  }>
+>(async (_input, { wrap }) => {
+  const text: string = await wrap('hello')
+    .onError(P._, () => 'fallback')
+    .onSuccess((result) => result.value)
+  return text
+})
+
+// Constrained generic operations preserve refinements and reject invalid inputs.
+brick<
+  Brick<{
+    params: undefined
+    result: string
+    errors: Read['errors']
+    requires: {
+      operation: <Value extends { id: string }>(value: Value) => BrickRun<Read['errors'], Value>
+    }
+  }>
+>(async (_input, { operation }) => {
+  const result = await operation({ id: 'asset', label: 'hello' })
+  const label: string = result.label
+  // @ts-expect-error the generic constraint is preserved
+  operation(1)
+  return label
+})
+
+// Contextual awaitability never narrows a monomorphic operation to its input literal.
+brick<
+  Brick<{
+    params: undefined
+    result: number
+    errors: Read['errors']
+    requires: { operation: (value: number) => BrickRun<Read['errors'], number> }
+  }>
+>(async (_input, { operation }) => {
+  const value = await operation(1)
+  // @ts-expect-error the operation can return any number
+  const literal: 1 = value
+  void literal
+  return value
+})
+
+type ManyOverloads = {
+  (value: 'a'): BrickRun<Read['errors'], 'A'>
+  (value: 'b'): BrickRun<Read['errors'], 'B'>
+  (value: 'c'): BrickRun<Read['errors'], 'C'>
+  (value: 'd'): BrickRun<Read['errors'], 'D'>
+  (value: 'e'): BrickRun<Read['errors'], 'E'>
+  (value: 'f'): BrickRun<Read['errors'], 'F'>
+  readonly label: string
+}
+brick<
+  Brick<{
+    params: undefined
+    result: string
+    errors: Read['errors']
+    requires: { operation: ManyOverloads }
+  }>
+>(async (_input, { operation }) => {
+  const first: 'A' = await operation('a')
+  const last: 'F' = await operation('f')
+  const label: string = operation.label
+  void last
+  void label
+  return first
 })

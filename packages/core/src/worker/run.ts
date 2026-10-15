@@ -90,7 +90,7 @@ class BrickRunImplementation<Error, InitialSuccess, LocalResult, RemainingError>
     return this.#execution
       .catch((error: unknown) => {
         if (!(error instanceof UnhandledRunFailure)) throw error
-        if (propagate) return failWith(error.failure)
+        if (propagate?.active) return failWith(error.failure)
         throw new UnhandledBrickFailureError(error.failure)
       })
       .then(onfulfilled, onrejected)

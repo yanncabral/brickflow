@@ -42,8 +42,9 @@ export async function executeBrickImplementation<F extends Brick>(
   dependencies: DependencyFunctions<F>,
   signals: SignalsOf<F> extends SignalDefinitions ? SignalFunctions<SignalsOf<F>> : never
 ): Promise<BrickExecutionResult<F>> {
+  const scope = { active: true }
   try {
-    const value = await brickExecutionScope.run(true, () =>
+    const value = await brickExecutionScope.run(scope, () =>
       implementation.handler(params, requirements as Parameters<BrickHandler<F>>[1], dependencies, {
         fail: failWith,
         signals
@@ -53,5 +54,7 @@ export async function executeBrickImplementation<F extends Brick>(
   } catch (error) {
     if (!isBrickFailure(error)) throw error
     return { ok: false, error: readBrickFailure(error) as ErrorsOf<F> }
+  } finally {
+    scope.active = false
   }
 }
