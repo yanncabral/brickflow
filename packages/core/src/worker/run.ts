@@ -58,7 +58,7 @@ class BrickRunImplementation<Error, InitialSuccess, LocalResult, RemainingError>
     return new BrickRunImplementation(this.#handle, this.#handlers, handler)
   }
 
-  onFailure(pattern: SupportedPattern<RemainingError>, handler: (error: never) => unknown) {
+  onError(pattern: SupportedPattern<RemainingError>, handler: (error: never) => unknown) {
     return new BrickRunImplementation(
       this.#handle,
       [...this.#handlers, { pattern: pattern as SupportedPattern<unknown>, handler }],
@@ -66,8 +66,12 @@ class BrickRunImplementation<Error, InitialSuccess, LocalResult, RemainingError>
     )
   }
 
+  onFailure(pattern: SupportedPattern<RemainingError>, handler: (error: never) => unknown) {
+    return this.onError(pattern, handler)
+  }
+
   with(pattern: SupportedPattern<RemainingError>, handler: (error: never) => unknown) {
-    return this.onFailure(pattern, handler)
+    return this.onError(pattern, handler)
   }
 
   // biome-ignore lint/suspicious/noThenProperty: exhaustive BrickRun values are intentionally PromiseLike

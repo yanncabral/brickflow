@@ -206,8 +206,9 @@ Brick execution forwards ID, optional metadata, and optional Layer-bound `brickI
 | `fail(error)` | Typed domain failure |
 | Dependency failure | Automatic propagation |
 | `.onSuccess(handler)` | Transforms only the original Brick success; supports async and `undefined` results |
-| `.onFailure(pattern, handler)` | Typed recovery; `undefined` leaves failure unhandled |
-| `.with(pattern, handler)` | Alias for `.onFailure(pattern, handler)` |
+| `.onError(pattern, handler)` | Typed recovery; `undefined` leaves failure unhandled |
+| `.with(pattern, handler)` | Alias for `.onError(pattern, handler)` |
+| `.onFailure(pattern, handler)` | Deprecated compatibility alias for `.onError(pattern, handler)` |
 | Unhandled typed failure | Not `PromiseLike` until exhausted; forced consumption rejects with `UnhandledBrickFailureError` |
 | Unexpected `throw` | Rejected defect |
 | Worker boundary | `{ ok: false, error }`; future durable adapters must preserve structured data |
