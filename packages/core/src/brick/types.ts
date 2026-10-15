@@ -241,14 +241,16 @@ type SameSignature<Left, Right> =
     ? true
     : false
 
-type HasGenericIdentityOverload<Requirement, Error, Remaining> = Requirement extends {
+type HasGenericIdentityOverload<Requirement, Error, Remaining, Constraint> = Requirement extends {
   (...args: infer FirstArgs): infer FirstResult
   (...args: infer LastArgs): infer LastResult
 }
   ? SameSignature<
       Requirement,
       {
-        <Value>(value: Value): IncompleteBrickRun<Error, Value, Value, Remaining, never>
+        <Value extends Constraint>(
+          value: Value
+        ): IncompleteBrickRun<Error, Value, Value, Remaining, never>
         (...args: LastArgs): LastResult
       }
     > extends true
@@ -257,7 +259,9 @@ type HasGenericIdentityOverload<Requirement, Error, Remaining> = Requirement ext
         Requirement,
         {
           (...args: FirstArgs): FirstResult
-          <Value>(value: Value): IncompleteBrickRun<Error, Value, Value, Remaining, never>
+          <Value extends Constraint>(
+            value: Value
+          ): IncompleteBrickRun<Error, Value, Value, Remaining, never>
         }
       >
   : false
@@ -269,7 +273,7 @@ type GenericIdentitySignature<
   Errors,
   Signature = OperationSignatures<Requirement>
 > = Signature extends (
-  ...args: never[]
+  value: infer Constraint
 ) => IncompleteBrickRun<
   infer Error,
   infer _Initial,
@@ -278,8 +282,8 @@ type GenericIdentitySignature<
   infer _Recovered
 >
   ? [Remaining] extends [Errors]
-    ? HasGenericIdentityOverload<Requirement, Error, Remaining> extends true
-      ? <Value>(
+    ? HasGenericIdentityOverload<Requirement, Error, Remaining, Constraint> extends true
+      ? <Value extends Constraint>(
           value: Value
         ) => HandlerOperationResult<
           IncompleteBrickRun<Error, Value, Value, Remaining, never>,
@@ -292,11 +296,9 @@ type GenericIdentitySignature<
 type ContextualSignature<Signature, Errors, Requirement> = Signature extends (
   ...args: infer Args
 ) => infer Result
-  ? unknown extends Args[0]
-    ? [GenericIdentitySignature<Requirement, Errors>] extends [never]
-      ? HandlerSignature<Args, Result, Errors>
-      : never
-    : HandlerSignature<Args, Result, Errors>
+  ? [GenericIdentitySignature<Requirement, Errors, Signature>] extends [never]
+    ? HandlerSignature<Args, Result, Errors>
+    : never
   : never
 
 type HandlerOverloads<Requirement, Errors> = UnionToIntersection<

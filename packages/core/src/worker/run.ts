@@ -1,5 +1,5 @@
 import { isMatching } from 'ts-pattern'
-import { brickExecutionScope } from '../brick/execution-scope'
+import type { HandlerExecutionScope } from '../brick/execution-scope'
 import type { EngineExecutionHandle, EngineExecutionResult } from '../engine/types'
 import type { SupportedPattern } from '../matching/types'
 import type { BrickRun } from './types'
@@ -37,18 +37,34 @@ class BrickRunImplementation<Error, InitialSuccess, LocalResult, RemainingError>
   readonly #handle: EngineExecutionHandle<InitialSuccess, Error>
   readonly #handlers: readonly RegisteredHandler[]
   readonly #successHandler: ((value: InitialSuccess) => unknown) | undefined
-  #execution?: Promise<LocalResult>
+  readonly #scope: HandlerExecutionScope | undefined
+  readonly #consumption: { execution?: Promise<LocalResult> }
 
   constructor(
     handle: EngineExecutionHandle<InitialSuccess, Error>,
     handlers: readonly RegisteredHandler[] = [],
-    successHandler?: (value: InitialSuccess) => unknown
+    successHandler?: (value: InitialSuccess) => unknown,
+    scope?: HandlerExecutionScope,
+    consumption: { execution?: Promise<LocalResult> } = {}
   ) {
     this.id = handle.id
     this.#handle = handle
     this.#handlers = Object.freeze([...handlers])
     this.#successHandler = successHandler
+    this.#scope = scope
+    this.#consumption = consumption
     Object.freeze(this)
+  }
+
+  static bind(value: unknown, scope: HandlerExecutionScope): unknown {
+    if (!(value instanceof BrickRunImplementation) || value.#scope === scope) return value
+    return new BrickRunImplementation(
+      value.#handle,
+      value.#handlers,
+      value.#successHandler,
+      scope,
+      value.#consumption
+    )
   }
 
   status() {
@@ -60,14 +76,15 @@ class BrickRunImplementation<Error, InitialSuccess, LocalResult, RemainingError>
   }
 
   onSuccess(handler: (value: InitialSuccess) => unknown) {
-    return new BrickRunImplementation(this.#handle, this.#handlers, handler)
+    return new BrickRunImplementation(this.#handle, this.#handlers, handler, this.#scope)
   }
 
   onError(pattern: SupportedPattern<RemainingError>, handler: (error: never) => unknown) {
     return new BrickRunImplementation(
       this.#handle,
       [...this.#handlers, { pattern: pattern as SupportedPattern<unknown>, handler }],
-      this.#successHandler
+      this.#successHandler,
+      this.#scope
     )
   }
 
@@ -84,9 +101,9 @@ class BrickRunImplementation<Error, InitialSuccess, LocalResult, RemainingError>
     onfulfilled?: ((value: LocalResult) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
   ): PromiseLike<TResult1 | TResult2> {
-    const propagate = brickExecutionScope.getStore()
-    this.#execution ??= this.#execute()
-    return this.#execution
+    const propagate = this.#scope
+    this.#consumption.execution ??= this.#execute()
+    return this.#consumption.execution
       .catch((error: unknown) => {
         if (!(error instanceof UnhandledRunFailure)) throw error
         const boundaryError = new UnhandledBrickFailureError(error.failure)
@@ -124,4 +141,8 @@ export function createBrickRun<Error, Success>(
     Error,
     Success
   >
+}
+
+export function bindBrickRunToHandler(value: unknown, scope: HandlerExecutionScope): unknown {
+  return BrickRunImplementation.bind(value, scope)
 }

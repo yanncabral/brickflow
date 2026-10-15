@@ -313,3 +313,45 @@ brick<
   await operation('text')
   return undefined
 })
+
+type ConstrainedGenericFirst = {
+  <Value extends { id: string }>(value: Value): BrickRun<Read['errors'], Value>
+  (value: 'special'): BrickRun<Read['errors'], 42>
+}
+type ConstrainedGenericLast = {
+  (value: 'special'): BrickRun<Read['errors'], 42>
+  <Value extends { id: string }>(value: Value): BrickRun<Read['errors'], Value>
+}
+brick<
+  Brick<{
+    params: undefined
+    result: string
+    errors: Read['errors']
+    requires: { first: ConstrainedGenericFirst; last: ConstrainedGenericLast }
+  }>
+>(async (_input, { first, last }) => {
+  const firstValue = await first({ id: 'x', label: 'y' })
+  const lastValue = await last({ id: 'x', label: 'y' })
+  const firstLabel: string = firstValue.label
+  const lastLabel: string = lastValue.label
+  const firstSpecial: 42 = await first('special')
+  const lastSpecial: 42 = await last('special')
+  const recovered = await first({ id: 'x', label: 'y' }).onError(P._, () => ({
+    id: 'fallback',
+    label: 'fallback'
+  }))
+  const recoveredLabel: string = recovered.label
+  const originalFirst: ConstrainedGenericFirst = first
+  const originalLast: ConstrainedGenericLast = last
+  // @ts-expect-error an unrelated argument does not satisfy the generic constraint
+  first(1)
+  // @ts-expect-error the required id remains mandatory
+  last({ label: 'y' })
+  void lastLabel
+  void firstSpecial
+  void lastSpecial
+  void recoveredLabel
+  void originalFirst
+  void originalLast
+  return firstLabel
+})

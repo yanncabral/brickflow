@@ -222,3 +222,34 @@ test('manually thrown boundary errors remain defects inside handlers', async () 
   }).onError(P._, () => null)
   await expect(Promise.resolve(run)).rejects.toBe(defect)
 })
+
+test('binding a shared run preserves consumption memoization across handler boundaries', async () => {
+  let successes = 0
+  const successful = brick<
+    Brick<{
+      params: AnkiImportInput
+      result: AnkiImportResult
+      errors: ImportFailure
+    }>
+  >(() => ({ imported: 3 }))
+  const shared = successful(input).onSuccess((value) => {
+    successes++
+    return value
+  })
+  expect(await (shared as unknown as PromiseLike<AnkiImportResult>)).toEqual({ imported: 3 })
+  const result = await importRequestBrick(input, {
+    requirements: { importer: () => shared }
+  }).onError(P._, () => null)
+  expect(result).toEqual({ imported: 3 })
+  expect(successes).toBe(1)
+})
+
+test('required operations remain bound after an asynchronous pause in the handler', async () => {
+  const wrapper = brick<ImportRequestBrick>(async (value, { importer }) => {
+    await Promise.resolve()
+    return await importer(value)
+  })
+  expect(
+    await wrapper(input, { requirements: { importer } }).onError(P._, (error) => error)
+  ).toEqual({ type: 'import_failed' })
+})
