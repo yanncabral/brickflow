@@ -233,8 +233,8 @@ brick<
 >(async (_input, { operation }) => {
   const original: ManyOverloads = operation
   void original
-  const first: 'A' = await operation('a')
-  const last: 'F' = await operation('f')
+  const first: 'A' = await operation('a').onError(P._, () => 'A' as const)
+  const last: 'F' = await operation('f').onError(P._, () => 'F' as const)
   const label: string = operation.label
   void last
   void label
@@ -462,4 +462,164 @@ brick<
   void otherText
   void recovered
   return text
+})
+
+// Contextual signatures keep an explicit receiver requirement.
+type Receiver = { prefix: string }
+type ReceiverOperation = (this: Receiver, value: string) => BrickRun<Read['errors'], string>
+brick<
+  Brick<{
+    params: undefined
+    result: string
+    errors: Read['errors']
+    requires: { operation: ReceiverOperation }
+  }>
+>(async (_input, { operation }) => {
+  // @ts-expect-error the receiver is required even inside a handler
+  operation('text')
+  const original: ReceiverOperation = operation
+  void original
+  return await operation.call({ prefix: 'x' }, 'text')
+})
+
+// Unsupported generic branches are preserved in any declaration position.
+type ThreeSignatures = {
+  (value: 'first'): BrickRun<Read['errors'], 42>
+  <Value>(value: Value): BrickRun<Read['errors'], { value: Value }>
+  (value: 'last'): BrickRun<Read['errors'], 43>
+}
+brick<
+  Brick<{
+    params: undefined
+    result: string
+    errors: Read['errors']
+    requires: { operation: ThreeSignatures }
+  }>
+>(async (_input, { operation }) => {
+  const value: string = await operation('text')
+    .onError(P._, () => 'fallback')
+    .onSuccess((result) => result.value)
+  const number: number = await operation(1)
+    .onError(P._, () => 0)
+    .onSuccess((result) => result.value)
+  const original: ThreeSignatures = operation
+  void number
+  void original
+  return value
+})
+
+// Large overload sets retain every original callable branch.
+type TwentySignatures = {
+  (value: 'case0'): BrickRun<Read['errors'], '0'>
+  (value: 'case1'): BrickRun<Read['errors'], '1'>
+  (value: 'case2'): BrickRun<Read['errors'], '2'>
+  (value: 'case3'): BrickRun<Read['errors'], '3'>
+  (value: 'case4'): BrickRun<Read['errors'], '4'>
+  (value: 'case5'): BrickRun<Read['errors'], '5'>
+  (value: 'case6'): BrickRun<Read['errors'], '6'>
+  (value: 'case7'): BrickRun<Read['errors'], '7'>
+  (value: 'case8'): BrickRun<Read['errors'], '8'>
+  (value: 'case9'): BrickRun<Read['errors'], '9'>
+  (value: 'case10'): BrickRun<Read['errors'], '10'>
+  (value: 'case11'): BrickRun<Read['errors'], '11'>
+  (value: 'case12'): BrickRun<Read['errors'], '12'>
+  (value: 'case13'): BrickRun<Read['errors'], '13'>
+  (value: 'case14'): BrickRun<Read['errors'], '14'>
+  (value: 'case15'): BrickRun<Read['errors'], '15'>
+  (value: 'case16'): BrickRun<Read['errors'], '16'>
+  (value: 'case17'): BrickRun<Read['errors'], '17'>
+  (value: 'case18'): BrickRun<Read['errors'], '18'>
+  (value: 'case19'): BrickRun<Read['errors'], '19'>
+}
+brick<
+  Brick<{
+    params: undefined
+    result: string
+    errors: Read['errors']
+    requires: { operation: TwentySignatures }
+  }>
+>(async (_input, { operation }) => {
+  const original: TwentySignatures = operation
+  void original
+  const value0: '0' = await operation('case0').onError(P._, () => '0' as const)
+  void value0
+  const value1: '1' = await operation('case1').onError(P._, () => '1' as const)
+  void value1
+  const value2: '2' = await operation('case2').onError(P._, () => '2' as const)
+  void value2
+  const value3: '3' = await operation('case3').onError(P._, () => '3' as const)
+  void value3
+  const value4: '4' = await operation('case4').onError(P._, () => '4' as const)
+  void value4
+  const value5: '5' = await operation('case5').onError(P._, () => '5' as const)
+  void value5
+  const value6: '6' = await operation('case6').onError(P._, () => '6' as const)
+  void value6
+  const value7: '7' = await operation('case7').onError(P._, () => '7' as const)
+  void value7
+  const value8: '8' = await operation('case8').onError(P._, () => '8' as const)
+  void value8
+  const value9: '9' = await operation('case9').onError(P._, () => '9' as const)
+  void value9
+  const value10: '10' = await operation('case10').onError(P._, () => '10' as const)
+  void value10
+  const value11: '11' = await operation('case11').onError(P._, () => '11' as const)
+  void value11
+  const value12: '12' = await operation('case12').onError(P._, () => '12' as const)
+  void value12
+  const value13: '13' = await operation('case13').onError(P._, () => '13' as const)
+  void value13
+  const value14: '14' = await operation('case14').onError(P._, () => '14' as const)
+  void value14
+  const value15: '15' = await operation('case15').onError(P._, () => '15' as const)
+  void value15
+  const value16: '16' = await operation('case16').onError(P._, () => '16' as const)
+  void value16
+  const value17: '17' = await operation('case17').onError(P._, () => '17' as const)
+  void value17
+  const value18: '18' = await operation('case18').onError(P._, () => '18' as const)
+  void value18
+  const value19: '19' = await operation('case19').onError(P._, () => '19' as const)
+  void value19
+  return value0
+})
+
+// Equal outer signatures must not hide a distinct middle declaration.
+type EqualOuterSignatures = {
+  (value: string): BrickRun<Read['errors'], string>
+  (value: number): BrickRun<Read['errors'], number>
+  (value: string): BrickRun<Read['errors'], string>
+}
+brick<
+  Brick<{
+    params: undefined
+    result: number
+    errors: Read['errors']
+    requires: { operation: EqualOuterSignatures }
+  }>
+>(async (_input, { operation }) => {
+  const result: number = await operation(1).onError(P._, () => 0)
+  const original: EqualOuterSignatures = operation
+  void original
+  return result
+})
+
+// Receiver requirements also survive overload reconstruction.
+type ReceiverOverloads = {
+  (this: Receiver, value: string): BrickRun<Read['errors'], string>
+  (this: Receiver, value: number): BrickRun<Read['errors'], number>
+}
+brick<
+  Brick<{
+    params: undefined
+    result: number
+    errors: Read['errors']
+    requires: { operation: ReceiverOverloads }
+  }>
+>(async (_input, { operation }) => {
+  // @ts-expect-error both signatures require a receiver
+  operation('text')
+  // @ts-expect-error the numeric overload also requires its receiver
+  operation(1)
+  return await operation.call({ prefix: 'x' }, 1)
 })
