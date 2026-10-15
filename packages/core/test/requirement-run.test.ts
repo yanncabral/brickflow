@@ -175,3 +175,50 @@ test('pending detached consumption checks scope activity when the failure arrive
   release()
   expect(await detached).toBeInstanceOf(UnhandledBrickFailureError)
 })
+
+test('detached consumption exposes a boundary error while its parent is still active', async () => {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let report!: (error: unknown) => void
+  const observed = new Promise<unknown>((resolve) => {
+    report = resolve
+  })
+  const parent = brick<Brick<{ params: undefined; result: string }>>(async () => {
+    void Promise.resolve(importer(input) as unknown as PromiseLike<AnkiImportResult>).catch(report)
+    await gate
+    return 'done'
+  })
+  const run = parent(undefined)
+  const result = Promise.resolve(run)
+  try {
+    const error = await observed
+    expect(await run.status()).toBe('running')
+    expect(error).toBeInstanceOf(UnhandledBrickFailureError)
+    expect((error as UnhandledBrickFailureError).failure).toEqual({ type: 'import_failed' })
+    const unrelated = importRequestBrick(input, {
+      requirements: {
+        importer: () => {
+          throw error
+        }
+      }
+    }).onError(P._, () => null)
+    await expect(Promise.resolve(unrelated)).rejects.toBe(error)
+  } finally {
+    release()
+    expect(await result).toBe('done')
+  }
+})
+
+test('manually thrown boundary errors remain defects inside handlers', async () => {
+  const defect = new UnhandledBrickFailureError({ type: 'import_failed' })
+  const run = importRequestBrick(input, {
+    requirements: {
+      importer: () => {
+        throw defect
+      }
+    }
+  }).onError(P._, () => null)
+  await expect(Promise.resolve(run)).rejects.toBe(defect)
+})

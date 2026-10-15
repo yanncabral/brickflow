@@ -42,7 +42,7 @@ export async function executeBrickImplementation<F extends Brick>(
   dependencies: DependencyFunctions<F>,
   signals: SignalsOf<F> extends SignalDefinitions ? SignalFunctions<SignalsOf<F>> : never
 ): Promise<BrickExecutionResult<F>> {
-  const scope = { active: true }
+  const scope = { active: true, failures: new WeakMap<Error, unknown>() }
   try {
     const value = await brickExecutionScope.run(scope, () =>
       implementation.handler(params, requirements as Parameters<BrickHandler<F>>[1], dependencies, {
@@ -52,6 +52,9 @@ export async function executeBrickImplementation<F extends Brick>(
     )
     return { ok: true, value }
   } catch (error) {
+    if (error instanceof Error && scope.failures.has(error)) {
+      return { ok: false, error: scope.failures.get(error) as ErrorsOf<F> }
+    }
     if (!isBrickFailure(error)) throw error
     return { ok: false, error: readBrickFailure(error) as ErrorsOf<F> }
   } finally {

@@ -1,6 +1,5 @@
 import { isMatching } from 'ts-pattern'
 import { brickExecutionScope } from '../brick/execution-scope'
-import { failWith } from '../brick/failure'
 import type { EngineExecutionHandle, EngineExecutionResult } from '../engine/types'
 import type { SupportedPattern } from '../matching/types'
 import type { BrickRun } from './types'
@@ -90,8 +89,11 @@ class BrickRunImplementation<Error, InitialSuccess, LocalResult, RemainingError>
     return this.#execution
       .catch((error: unknown) => {
         if (!(error instanceof UnhandledRunFailure)) throw error
-        if (propagate?.active) return failWith(error.failure)
-        throw new UnhandledBrickFailureError(error.failure)
+        const boundaryError = new UnhandledBrickFailureError(error.failure)
+        // Only a rejection that reaches the owning handler becomes its domain failure.
+        // Detached consumers always observe the documented public error.
+        if (propagate?.active) propagate.failures.set(boundaryError, error.failure)
+        throw boundaryError
       })
       .then(onfulfilled, onrejected)
   }
