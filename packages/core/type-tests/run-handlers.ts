@@ -355,3 +355,111 @@ brick<
   void originalLast
   return firstLabel
 })
+
+// Non-identity generic overloads retain their original explicit-handler inference.
+type WrappedFirst = {
+  <Value>(value: Value): BrickRun<Read['errors'], { value: Value }>
+  (value: 'special'): BrickRun<Read['errors'], 42>
+}
+type WrappedLast = {
+  (value: 'special'): BrickRun<Read['errors'], 42>
+  <Value>(value: Value): BrickRun<Read['errors'], { value: Value }>
+}
+brick<
+  Brick<{
+    params: undefined
+    result: string
+    errors: Read['errors']
+    requires: { first: WrappedFirst; last: WrappedLast }
+  }>
+>(async (_input, { first, last }) => {
+  const firstText: string = await first('text')
+    .onError(P._, () => 'fallback')
+    .onSuccess((result) => result.value)
+  const lastText: string = await last('text')
+    .onError(P._, () => 'fallback')
+    .onSuccess((result) => result.value)
+  const firstNumber: number = await first(1)
+    .onError(P._, () => 0)
+    .onSuccess((result) => result.value)
+  const special: 42 = await first('special').onError(P._, () => 42 as const)
+  const originalFirst: WrappedFirst = first
+  const originalLast: WrappedLast = last
+  void lastText
+  void firstNumber
+  void special
+  void originalFirst
+  void originalLast
+  return firstText
+})
+
+// Eligibility belongs to each overload, irrespective of the last return type.
+type OtherFailure = { type: 'other' }
+type SafeFirst = {
+  (value: 'safe'): BrickRun<Read['errors'], string>
+  (value: 'other'): BrickRun<OtherFailure, number>
+}
+type SafeLast = {
+  (value: 'other'): BrickRun<OtherFailure, number>
+  (value: 'safe'): BrickRun<Read['errors'], string>
+}
+type PlainLast = {
+  (value: 'safe'): BrickRun<Read['errors'], string>
+  (value: 'plain'): number
+}
+brick<
+  Brick<{
+    params: undefined
+    result: string
+    errors: Read['errors']
+    requires: { first: SafeFirst; last: SafeLast; plain: PlainLast }
+  }>
+>(async (_input, { first, last, plain }) => {
+  const firstText: string = await first('safe')
+  const lastText: string = await last('safe')
+  const plainText: string = await plain('safe')
+  const number: number = plain('plain')
+  // @ts-expect-error other failures must still be handled explicitly
+  await first('other')
+  // @ts-expect-error declaration order cannot permit undeclared failures
+  await last('other')
+  const recovered: number = await first('other').onError(P._, () => 0)
+  const originalFirst: SafeFirst = first
+  const originalLast: SafeLast = last
+  void lastText
+  void plainText
+  void number
+  void recovered
+  void originalFirst
+  void originalLast
+  return firstText
+})
+
+// An undeclared generic failure cannot disable a safe concrete overload.
+type UnsafeGenericFirst = {
+  <Value>(value: Value): BrickRun<OtherFailure, Value>
+  (value: 'safe'): BrickRun<Read['errors'], string>
+}
+type UnsafeGenericLast = {
+  (value: 'safe'): BrickRun<Read['errors'], string>
+  <Value>(value: Value): BrickRun<OtherFailure, Value>
+}
+brick<
+  Brick<{
+    params: undefined
+    result: string
+    errors: Read['errors']
+    requires: { first: UnsafeGenericFirst; last: UnsafeGenericLast }
+  }>
+>(async (_input, { first, last }) => {
+  const text: string = await first('safe')
+  const otherText: string = await last('safe')
+  // @ts-expect-error the generic overload still has an undeclared failure
+  await first(1)
+  // @ts-expect-error order cannot permit the generic failure
+  await last(1)
+  const recovered: number = await first(1).onError(P._, () => 0)
+  void otherText
+  void recovered
+  return text
+})

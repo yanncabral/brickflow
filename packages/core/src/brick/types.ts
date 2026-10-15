@@ -281,15 +281,10 @@ type GenericIdentitySignature<
   infer Remaining,
   infer _Recovered
 >
-  ? [Remaining] extends [Errors]
-    ? HasGenericIdentityOverload<Requirement, Error, Remaining, Constraint> extends true
-      ? <Value extends Constraint>(
-          value: Value
-        ) => HandlerOperationResult<
-          IncompleteBrickRun<Error, Value, Value, Remaining, never>,
-          Errors
-        >
-      : never
+  ? HasGenericIdentityOverload<Requirement, Error, Remaining, Constraint> extends true
+    ? <Value extends Constraint>(
+        value: Value
+      ) => HandlerOperationResult<IncompleteBrickRun<Error, Value, Value, Remaining, never>, Errors>
     : never
   : never
 
@@ -320,35 +315,57 @@ type HasOverloads<Requirement> = Requirement extends {
     : true
   : false
 
-type HandlerRequirement<Requirement, Errors> = Requirement extends (
-  ...args: infer Args
-) => infer Result
-  ? Result extends IncompleteBrickRun<
-      infer Error,
-      infer _Initial,
-      infer _Local,
-      infer RemainingError,
-      infer _Recovered
-    >
-    ? [RemainingError] extends [Errors]
-      ? HasOverloads<Requirement> extends true
+// A pair containing an unsupported generic signature must keep its original
+// inference. Assignability alone cannot detect erased generic overloads.
+type CompatibleHandlerOverloads<Requirement, Errors> = Requirement extends {
+  (...args: infer FirstArgs): infer FirstResult
+  (...args: infer LastArgs): infer LastResult
+}
+  ? [GenericIdentitySignature<Requirement, Errors>] extends [never]
+    ? OperationSignatures<Requirement> extends
+        | ((...args: FirstArgs) => FirstResult)
+        | ((...args: LastArgs) => LastResult)
+      ? SameSignature<
+          Requirement,
+          {
+            (...args: FirstArgs): FirstResult
+            (...args: LastArgs): LastResult
+          }
+        > extends true
         ? HandlerOverloads<Requirement, Errors>
-        : ((...args: Args) => Result) & Pick<Requirement, keyof Requirement> extends Requirement
-          ? HandlerOverloads<Requirement, Errors>
-          : Requirement extends <Value extends Args[0]>(
-                value: Value
-              ) => IncompleteBrickRun<Error, Value, Value, RemainingError, never>
-            ? (<Value extends Args[0]>(
-                value: Value
-              ) => HandlerOperationResult<
-                IncompleteBrickRun<Error, Value, Value, RemainingError, never>,
-                Errors
-              >) &
-                Requirement
-            : Requirement
-      : Requirement
-    : Requirement
+        : Requirement
+      : HandlerOverloads<Requirement, Errors>
+    : HandlerOverloads<Requirement, Errors>
   : Requirement
+
+type HandlerRequirement<Requirement, Errors> =
+  HasOverloads<Requirement> extends true
+    ? CompatibleHandlerOverloads<Requirement, Errors>
+    : Requirement extends (...args: infer Args) => infer Result
+      ? Result extends IncompleteBrickRun<
+          infer Error,
+          infer _Initial,
+          infer _Local,
+          infer RemainingError,
+          infer _Recovered
+        >
+        ? [RemainingError] extends [Errors]
+          ? ((...args: Args) => Result) & Pick<Requirement, keyof Requirement> extends Requirement
+            ? HandlerOverloads<Requirement, Errors>
+            : Requirement extends <Value extends Args[0]>(
+                  value: Value
+                ) => IncompleteBrickRun<Error, Value, Value, RemainingError, never>
+              ? (<Value extends Args[0]>(
+                  value: Value
+                ) => HandlerOperationResult<
+                  IncompleteBrickRun<Error, Value, Value, RemainingError, never>,
+                  Errors
+                >) &
+                  Requirement
+              : Requirement
+          : Requirement
+        : Requirement
+      : Requirement
 
 type HandlerRequirements<F extends Brick> = {
   [Key in keyof RequirementsOf<F>]: HandlerRequirement<RequirementsOf<F>[Key], ErrorsOf<F>>
