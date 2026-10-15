@@ -40,7 +40,7 @@ Immediately after publishing `0.0.1`, configure the npm trusted publisher with t
 
 - Provider: GitHub Actions
 - Owner: `yanncabral`
-- Repository: `flow`
+- Repository: `brickflow`
 - Workflow: `release.yml`
 - Environment: unset
 - Allowed action: `npm publish`
@@ -48,3 +48,5 @@ Immediately after publishing `0.0.1`, configure the npm trusted publisher with t
 ## Publishing after bootstrap
 
 Subsequent releases use GitHub Actions OIDC and npm provenance. Do not configure an `NPM_TOKEN`. Trusted-publisher identity or workflow mismatches fail safely instead of falling back to a stored credential.
+
+After renaming or transferring the GitHub repository, update both the npm trusted-publisher configuration and the published package's `repository.url` to match the new repository identity. If a release fails before publication, correct the configuration and retry the same version; do not create a new changeset solely to retry it.
