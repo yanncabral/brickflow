@@ -31,15 +31,18 @@ class BrickRunImplementation<Error, InitialSuccess, LocalResult, RemainingError>
   readonly id: string
   readonly #handle: EngineExecutionHandle<InitialSuccess, Error>
   readonly #handlers: readonly RegisteredHandler[]
+  readonly #successHandler: ((value: InitialSuccess) => unknown) | undefined
   #execution?: Promise<LocalResult>
 
   constructor(
     handle: EngineExecutionHandle<InitialSuccess, Error>,
-    handlers: readonly RegisteredHandler[] = []
+    handlers: readonly RegisteredHandler[] = [],
+    successHandler?: (value: InitialSuccess) => unknown
   ) {
     this.id = handle.id
     this.#handle = handle
     this.#handlers = Object.freeze([...handlers])
+    this.#successHandler = successHandler
     Object.freeze(this)
   }
 
@@ -51,11 +54,20 @@ class BrickRunImplementation<Error, InitialSuccess, LocalResult, RemainingError>
     return this.#handle.cancel(reason)
   }
 
+  onSuccess(handler: (value: InitialSuccess) => unknown) {
+    return new BrickRunImplementation(this.#handle, this.#handlers, handler)
+  }
+
+  onFailure(pattern: SupportedPattern<RemainingError>, handler: (error: never) => unknown) {
+    return new BrickRunImplementation(
+      this.#handle,
+      [...this.#handlers, { pattern: pattern as SupportedPattern<unknown>, handler }],
+      this.#successHandler
+    )
+  }
+
   with(pattern: SupportedPattern<RemainingError>, handler: (error: never) => unknown) {
-    return new BrickRunImplementation(this.#handle, [
-      ...this.#handlers,
-      { pattern: pattern as SupportedPattern<unknown>, handler }
-    ])
+    return this.onFailure(pattern, handler)
   }
 
   // biome-ignore lint/suspicious/noThenProperty: exhaustive BrickRun values are intentionally PromiseLike
@@ -69,7 +81,11 @@ class BrickRunImplementation<Error, InitialSuccess, LocalResult, RemainingError>
 
   async #execute(): Promise<LocalResult> {
     const outcome: EngineExecutionResult<InitialSuccess, Error> = await this.#handle.result
-    if (outcome.ok) return outcome.value as unknown as LocalResult
+    if (outcome.ok) {
+      return (
+        this.#successHandler ? await this.#successHandler(outcome.value) : outcome.value
+      ) as LocalResult
+    }
 
     for (const registered of this.#handlers) {
       if (!isMatching(registered.pattern)(outcome.error)) continue

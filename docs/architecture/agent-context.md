@@ -42,7 +42,7 @@ const useCase = brick<UseCase>(handler)
 Rules:
 
 - A named Brick contract is a reusable, erased TypeScript type; multiple implementations may share it.
-- `brick<Contract>(handler)` remains the unchanged executable factory and returns a frozen implementation.
+- `brick<Contract>(handler)` returns a frozen callable implementation. `implementation(params, options)` and `implementation.run(params, options)` share the same execution entry point.
 - No tokens or runtime requirement metadata.
 - Typed direct runs and Layer composition require missing providers statically. Runtime does not prevalidate provider keys because implementations carry no requirement metadata.
 
@@ -104,7 +104,7 @@ await app.users.getUser.run({ id })
 
 Nested Layer entry keys organize access. Durable paths use nested Layer `id`, then Brick entry key.
 
-Bound runs require only unresolved configuration.
+Bound runs require only unresolved configuration. Bound Bricks are also callable: `users.getGreeting({ id: 'ada' })` is equivalent to `users.getGreeting.run({ id: 'ada' })`, preserving provider and dependency resolution, signal paths, execution controls, and durable identity.
 
 ## Dependency resolution
 
@@ -205,10 +205,14 @@ Brick execution forwards ID, optional metadata, and optional Layer-bound `brickI
 |---|---|
 | `fail(error)` | Typed domain failure |
 | Dependency failure | Automatic propagation |
-| `.with(pattern, handler)` | Typed recovery; `undefined` leaves failure unhandled |
+| `.onSuccess(handler)` | Transforms only the original Brick success; supports async and `undefined` results |
+| `.onFailure(pattern, handler)` | Typed recovery; `undefined` leaves failure unhandled |
+| `.with(pattern, handler)` | Alias for `.onFailure(pattern, handler)` |
 | Unhandled typed failure | Not `PromiseLike` until exhausted; forced consumption rejects with `UnhandledBrickFailureError` |
 | Unexpected `throw` | Rejected defect |
 | Worker boundary | `{ ok: false, error }`; future durable adapters must preserve structured data |
+
+`onSuccess` receives the original Brick result regardless of its position relative to failure handlers. Recovery results bypass `onSuccess`. Awaiting yields the union of success and recovery results; consumers can return discriminated values to distinguish the branches. Success and recovery types are tracked separately even when their shapes overlap. Chains are immutable and consumption is memoized per chain. A later `onSuccess` replaces an earlier success handler rather than composing transformations. Failure handlers retain registration order and first-match behavior. Handler exceptions remain defects.
 
 Never collapse typed failure into generic `Error` across durable boundary.
 
