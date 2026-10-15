@@ -240,3 +240,76 @@ brick<
   void label
   return first
 })
+
+// A generic signature remains usable alongside a concrete overload, in either order.
+type GenericFirstOperation = {
+  <Value>(value: Value): BrickRun<Read['errors'], Value>
+  (value: 'special'): BrickRun<Read['errors'], 42>
+}
+type GenericLastOperation = {
+  (value: 'special'): BrickRun<Read['errors'], 42>
+  <Value>(value: Value): BrickRun<Read['errors'], Value>
+}
+brick<
+  Brick<{
+    params: undefined
+    result: string
+    errors: Read['errors']
+    requires: { first: GenericFirstOperation; last: GenericLastOperation }
+  }>
+>(async (_input, { first, last }) => {
+  const firstText: string = await first('text')
+  const lastText: string = await last('text')
+  const firstNumber: number = await first(1)
+  const lastNumber: number = await last(1)
+  const firstSpecial: 42 = await first('special')
+  const lastSpecial: 42 = await last('special')
+  const firstRecovered: string = await first('text').onError(P._, () => 'fallback')
+  const lastRecovered: string = await last('text').onError(P._, () => 'fallback')
+  const originalFirst: GenericFirstOperation = first
+  const originalLast: GenericLastOperation = last
+  void lastText
+  void firstNumber
+  void lastNumber
+  void firstSpecial
+  void lastSpecial
+  void firstRecovered
+  void lastRecovered
+  void originalFirst
+  void originalLast
+  return firstText
+})
+
+// An unknown-valued overload is not a generic identity operation.
+type UnknownOperation = {
+  (value: unknown): BrickRun<Read['errors'], unknown>
+  (value: 'special'): BrickRun<Read['errors'], 42>
+}
+brick<
+  Brick<{
+    params: undefined
+    result: unknown
+    errors: Read['errors']
+    requires: { operation: UnknownOperation }
+  }>
+>(async (_input, { operation }) => {
+  const result = await operation('text')
+  // @ts-expect-error an unknown result must not acquire the input type
+  const text: string = result
+  void text
+  return result
+})
+
+// A mixed operation still requires handling failures absent from the enclosing contract.
+brick<
+  Brick<{
+    params: undefined
+    result: undefined
+    errors: { type: 'missing'; id: string }
+    requires: { operation: GenericFirstOperation }
+  }>
+>(async (_input, { operation }) => {
+  // @ts-expect-error denied cannot propagate through this Brick's declared errors
+  await operation('text')
+  return undefined
+})

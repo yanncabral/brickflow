@@ -214,25 +214,97 @@ type HandlerSignature<Args extends readonly unknown[], Result, Errors> = (
 ) => HandlerOperationResult<Result, Errors>
 
 // Rotate overloads into a union before mapping, rather than inferring only the last.
-type OperationSignatures<Operation, Seen = Pick<Operation, keyof Operation>> = Operation extends (
-  ...args: infer Args
-) => infer Result
-  ? Seen extends Operation
-    ? never
-    :
+type OperationSignatures<
+  Operation,
+  Seen = Pick<Operation, keyof Operation>,
+  Depth extends readonly unknown[] = []
+> = Depth['length'] extends 16
+  ? never
+  : Operation extends {
+        (...args: infer FirstArgs): infer FirstResult
+        (...args: infer Args): infer Result
+      }
+    ?
+        | ((...args: FirstArgs) => FirstResult)
         | ((...args: Args) => Result)
-        | OperationSignatures<Seen & Operation, Seen & ((...args: Args) => Result)>
+        | (Seen extends Operation
+            ? never
+            : OperationSignatures<
+                Seen & Operation,
+                Seen & ((...args: Args) => Result),
+                [...Depth, unknown]
+              >)
+    : never
+
+type SameSignature<Left, Right> =
+  (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
+    ? true
+    : false
+
+type HasGenericIdentityOverload<Requirement, Error, Remaining> = Requirement extends {
+  (...args: infer FirstArgs): infer FirstResult
+  (...args: infer LastArgs): infer LastResult
+}
+  ? SameSignature<
+      Requirement,
+      {
+        <Value>(value: Value): IncompleteBrickRun<Error, Value, Value, Remaining, never>
+        (...args: LastArgs): LastResult
+      }
+    > extends true
+    ? true
+    : SameSignature<
+        Requirement,
+        {
+          (...args: FirstArgs): FirstResult
+          <Value>(value: Value): IncompleteBrickRun<Error, Value, Value, Remaining, never>
+        }
+      >
+  : false
+
+// Compare signatures exactly: an unknown-valued overload can otherwise look
+// assignable to a generic identity without preserving its input/output relation.
+type GenericIdentitySignature<
+  Requirement,
+  Errors,
+  Signature = OperationSignatures<Requirement>
+> = Signature extends (
+  ...args: never[]
+) => IncompleteBrickRun<
+  infer Error,
+  infer _Initial,
+  infer _Local,
+  infer Remaining,
+  infer _Recovered
+>
+  ? [Remaining] extends [Errors]
+    ? HasGenericIdentityOverload<Requirement, Error, Remaining> extends true
+      ? <Value>(
+          value: Value
+        ) => HandlerOperationResult<
+          IncompleteBrickRun<Error, Value, Value, Remaining, never>,
+          Errors
+        >
+      : never
+    : never
   : never
 
-type ContextualSignature<Signature, Errors> = Signature extends (
+type ContextualSignature<Signature, Errors, Requirement> = Signature extends (
   ...args: infer Args
 ) => infer Result
-  ? HandlerSignature<Args, Result, Errors>
+  ? unknown extends Args[0]
+    ? [GenericIdentitySignature<Requirement, Errors>] extends [never]
+      ? HandlerSignature<Args, Result, Errors>
+      : never
+    : HandlerSignature<Args, Result, Errors>
   : never
 
 type HandlerOverloads<Requirement, Errors> = UnionToIntersection<
-  ContextualSignature<OperationSignatures<Requirement>, Errors>
+  ContextualSignature<OperationSignatures<Requirement>, Errors, Requirement>
 > &
+  ([GenericIdentitySignature<Requirement, Errors>] extends [never]
+    ? unknown
+    : UnionToIntersection<GenericIdentitySignature<Requirement, Errors>>) &
   Pick<Requirement, keyof Requirement>
 
 type HasOverloads<Requirement> = Requirement extends {
