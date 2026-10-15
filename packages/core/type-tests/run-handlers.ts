@@ -76,7 +76,13 @@ type ForwardRead = Brick<{
   errors: Read['errors']
   requires: { reader: ReadOperation }
 }>
+const acceptReadOperation = (operation: ReadOperation) => operation
 brick<ForwardRead>(async (input, { reader }) => {
+  const original: ReadOperation = reader
+  const object: { reader: ReadOperation } = { reader }
+  acceptReadOperation(reader)
+  void original
+  void object
   const user: { id: string } = await reader(input)
   return user
 })
@@ -122,6 +128,8 @@ brick<
     requires: { operation: GenericReadOperation }
   }>
 >(async (_input, { operation }) => {
+  const original: GenericReadOperation = operation
+  void original
   const text: string = await operation('hello')
   const count: number = await operation(1)
   void count
@@ -141,6 +149,12 @@ brick<
     requires: { operation: OverloadedReadOperation }
   }>
 >(async (_input, { operation }) => {
+  const original: OverloadedReadOperation = operation
+  const object: { operation: OverloadedReadOperation } = { operation }
+  const acceptOperation = (value: OverloadedReadOperation) => value
+  acceptOperation(operation)
+  void original
+  void object
   const text: string = await operation('hello')
   const count: number = await operation(1)
   // @ts-expect-error invalid arguments remain invalid
@@ -217,6 +231,8 @@ brick<
     requires: { operation: ManyOverloads }
   }>
 >(async (_input, { operation }) => {
+  const original: ManyOverloads = operation
+  void original
   const first: 'A' = await operation('a')
   const last: 'F' = await operation('f')
   const label: string = operation.label

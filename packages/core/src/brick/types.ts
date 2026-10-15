@@ -198,18 +198,14 @@ export interface BrickTools<F extends Brick> {
 
 type HandlerOperationResult<Result, Errors> =
   Result extends IncompleteBrickRun<
-    infer Error,
-    infer InitialSuccess,
+    infer _Error,
+    infer _InitialSuccess,
     infer LocalResult,
     infer RemainingError,
-    infer RecoveredResult
+    infer _RecoveredResult
   >
     ? [RemainingError] extends [Errors]
-      ? Omit<
-          IncompleteBrickRun<Error, InitialSuccess, LocalResult, RemainingError, RecoveredResult>,
-          'then'
-        > &
-          PromiseLike<LocalResult>
+      ? Result & PromiseLike<LocalResult>
       : Result
     : Result
 
