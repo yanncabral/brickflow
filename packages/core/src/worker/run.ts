@@ -1,8 +1,8 @@
-import { isMatching } from 'ts-pattern'
+import { isMatching, P } from 'ts-pattern'
 import type { HandlerExecutionScope } from '../brick/execution-scope'
 import type { EngineExecutionHandle, EngineExecutionResult } from '../engine/types'
 import type { SupportedPattern } from '../matching/types'
-import type { BrickRun } from './types'
+import type { BrickRun, BrickRunControls } from './types'
 
 interface RegisteredHandler {
   readonly pattern: SupportedPattern<unknown>
@@ -28,24 +28,54 @@ function readableFailure(failure: unknown): string {
   }
 }
 
+// Shared only between compatible runtime copies; constructor-created errors are
+// deliberately unmarked so throwing one remains an unexpected defect.
+const runProtocol = Symbol.for('brickflow.run.v1')
+const unhandledFailureProtocol = Symbol.for('brickflow.unhandled-failure.v1')
+
+function boundaryFailure(
+  failure: unknown,
+  token: object,
+  scope?: HandlerExecutionScope
+): UnhandledBrickFailureError {
+  const error = new UnhandledBrickFailureError(failure)
+  Object.defineProperty(error, unhandledFailureProtocol, { value: token })
+  if (scope?.active) scope.failures.set(error, failure)
+  return error
+}
+
+function isProtocolFailure(
+  value: unknown,
+  token: object | undefined
+): value is { readonly failure: unknown } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    token !== undefined &&
+    Reflect.get(value, unhandledFailureProtocol) === token &&
+    Object.hasOwn(value, 'failure')
+  )
+}
+
 class UnhandledRunFailure {
   constructor(readonly failure: unknown) {}
 }
 
 class BrickRunImplementation<Error, InitialSuccess, LocalResult, RemainingError> {
   readonly id: string
+  readonly [runProtocol]: object
   readonly #handle: EngineExecutionHandle<InitialSuccess, Error>
   readonly #handlers: readonly RegisteredHandler[]
   readonly #successHandler: ((value: InitialSuccess) => unknown) | undefined
   readonly #scope: HandlerExecutionScope | undefined
-  readonly #consumption: { execution?: Promise<LocalResult> }
+  readonly #consumption: { execution?: Promise<LocalResult>; token?: object }
 
   constructor(
     handle: EngineExecutionHandle<InitialSuccess, Error>,
     handlers: readonly RegisteredHandler[] = [],
     successHandler?: (value: InitialSuccess) => unknown,
     scope?: HandlerExecutionScope,
-    consumption: { execution?: Promise<LocalResult> } = {}
+    consumption: { execution?: Promise<LocalResult>; token?: object } = {}
   ) {
     this.id = handle.id
     this.#handle = handle
@@ -53,6 +83,7 @@ class BrickRunImplementation<Error, InitialSuccess, LocalResult, RemainingError>
     this.#successHandler = successHandler
     this.#scope = scope
     this.#consumption = consumption
+    this[runProtocol] = consumption.token ??= Object.freeze({})
     Object.freeze(this)
   }
 
@@ -106,11 +137,9 @@ class BrickRunImplementation<Error, InitialSuccess, LocalResult, RemainingError>
     return this.#consumption.execution
       .catch((error: unknown) => {
         if (!(error instanceof UnhandledRunFailure)) throw error
-        const boundaryError = new UnhandledBrickFailureError(error.failure)
         // Only a rejection that reaches the owning handler becomes its domain failure.
         // Detached consumers always observe the documented public error.
-        if (propagate?.active) propagate.failures.set(boundaryError, error.failure)
-        throw boundaryError
+        throw boundaryFailure(error.failure, this[runProtocol], propagate)
       })
       .then(onfulfilled, onrejected)
   }
@@ -143,6 +172,108 @@ export function createBrickRun<Error, Success>(
   >
 }
 
+interface StructuralRun extends BrickRunControls, PromiseLike<unknown> {
+  onSuccess(handler: (value: never) => unknown): unknown
+  onError(pattern: SupportedPattern<unknown>, handler: (error: never) => unknown): unknown
+  onFailure(pattern: SupportedPattern<unknown>, handler: (error: never) => unknown): unknown
+  with(pattern: SupportedPattern<unknown>, handler: (error: never) => unknown): unknown
+}
+
+function isStructuralRun(value: unknown): value is StructuralRun {
+  return (
+    (typeof value === 'object' || typeof value === 'function') &&
+    value !== null &&
+    ['then', 'status', 'cancel', 'onSuccess', 'onError', 'onFailure', 'with'].every(
+      (key) => typeof Reflect.get(value, key) === 'function'
+    ) &&
+    typeof Reflect.get(value, 'id') === 'string'
+  )
+}
+
+class ObservedFailure {
+  constructor(readonly failure: unknown) {}
+}
+
+function protocolToken(value: unknown): object | undefined {
+  if ((typeof value !== 'object' && typeof value !== 'function') || value === null) return undefined
+  const token: unknown = Reflect.get(value, runProtocol)
+  return typeof token === 'object' && token !== null ? token : undefined
+}
+
+// Delegate consumption to preserve the original chain's memoization, handlers,
+// and execution controls, including when that chain belongs to another copy.
+class StructuralRunView implements StructuralRun {
+  readonly [runProtocol]: object
+  readonly #run: StructuralRun
+  #execution: Promise<unknown> | undefined
+  readonly #scope: HandlerExecutionScope
+
+  constructor(run: StructuralRun, scope: HandlerExecutionScope) {
+    this.#run = run
+    this.#scope = scope
+    this[runProtocol] = protocolToken(run) ?? Object.freeze({})
+    Object.freeze(this)
+  }
+
+  static bind(run: StructuralRun, scope: HandlerExecutionScope): StructuralRunView {
+    return run instanceof StructuralRunView && run.#scope === scope
+      ? run
+      : new StructuralRunView(run, scope)
+  }
+
+  get id() {
+    return this.#run.id
+  }
+  status() {
+    return this.#run.status()
+  }
+  cancel(reason?: string) {
+    return this.#run.cancel(reason)
+  }
+  onSuccess(handler: (value: never) => unknown) {
+    return bindBrickRunToHandler(this.#run.onSuccess(handler), this.#scope)
+  }
+  onError(pattern: SupportedPattern<unknown>, handler: (error: never) => unknown) {
+    return bindBrickRunToHandler(this.#run.onError(pattern, handler), this.#scope)
+  }
+  onFailure(pattern: SupportedPattern<unknown>, handler: (error: never) => unknown) {
+    return bindBrickRunToHandler(this.#run.onFailure(pattern, handler), this.#scope)
+  }
+  with(pattern: SupportedPattern<unknown>, handler: (error: never) => unknown) {
+    return bindBrickRunToHandler(this.#run.with(pattern, handler), this.#scope)
+  }
+
+  // biome-ignore lint/suspicious/noThenProperty: exhaustive BrickRun values are intentionally PromiseLike
+  then<Result = unknown, Rejected = never>(
+    onfulfilled?: ((value: unknown) => Result | PromiseLike<Result>) | null,
+    onrejected?: ((reason: unknown) => Rejected | PromiseLike<Rejected>) | null
+  ): PromiseLike<Result | Rejected> {
+    this.#execution ??= this.#consume()
+    return this.#execution.then(onfulfilled, onrejected)
+  }
+
+  async #consume(): Promise<unknown> {
+    let token: object | undefined
+    try {
+      // Compatible copies and transparent wrappers share their original consumption.
+      // Other implementations can report domain failures through the public handlers.
+      const source = protocolToken(this.#run)
+        ? this.#run
+        : this.#run.onError(P._, (failure) => {
+            throw new ObservedFailure(failure)
+          })
+      token = protocolToken(source)
+      return await source
+    } catch (error) {
+      if (error instanceof ObservedFailure || isProtocolFailure(error, token)) {
+        throw boundaryFailure(error.failure, this[runProtocol], this.#scope)
+      }
+      throw error
+    }
+  }
+}
+
 export function bindBrickRunToHandler(value: unknown, scope: HandlerExecutionScope): unknown {
-  return BrickRunImplementation.bind(value, scope)
+  if (value instanceof BrickRunImplementation) return BrickRunImplementation.bind(value, scope)
+  return isStructuralRun(value) ? StructuralRunView.bind(value, scope) : value
 }

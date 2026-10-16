@@ -332,10 +332,16 @@ type HandlerRequirement<Requirement, Errors> = Requirement extends (
         >
       ? SameSignature<
           Requirement,
-          <Value extends Args[0]>(
-            this: Receiver,
-            value: Value
-          ) => IncompleteBrickRun<Error, Value, Value, RemainingError, never>
+          keyof Requirement extends never
+            ? <Value extends Args[0]>(
+                this: Receiver,
+                value: Value
+              ) => IncompleteBrickRun<Error, Value, Value, RemainingError, never>
+            : (<Value extends Args[0]>(
+                this: Receiver,
+                value: Value
+              ) => IncompleteBrickRun<Error, Value, Value, RemainingError, never>) &
+                Pick<Requirement, keyof Requirement>
         > extends true
         ? (<Value extends Args[0]>(
             this: Receiver,

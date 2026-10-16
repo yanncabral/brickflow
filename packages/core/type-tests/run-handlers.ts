@@ -686,3 +686,46 @@ brick<
   void forwarded
   return result
 })
+
+// Identity generics retain inference and metadata when used as augmented callables.
+type LabeledIdentity = (<Value>(value: Value) => BrickRun<Read['errors'], Value>) & {
+  readonly label: string
+}
+type LabeledConstrainedIdentity = (<Value extends { id: string }>(
+  value: Value
+) => BrickRun<Read['errors'], Value>) & {
+  readonly label: string
+}
+brick<
+  Brick<{
+    params: undefined
+    result: string
+    errors: Read['errors']
+    requires: { operation: LabeledIdentity; constrained: LabeledConstrainedIdentity }
+  }>
+>(async (_input, { operation, constrained }) => {
+  const result: string = await operation('text')
+  const number: number = await operation(1)
+  const label: string = operation.label
+  const value = await constrained({ id: 'x', extra: 1 })
+  const extra: number = value.extra
+  const forwarded: LabeledIdentity = operation
+  const constrainedForwarded: LabeledConstrainedIdentity = constrained
+  // @ts-expect-error metadata remains readonly
+  operation.label = 'changed'
+  // @ts-expect-error the generic constraint still applies
+  constrained(1)
+  void number
+  void label
+  void extra
+  void forwarded
+  void constrainedForwarded
+  return result
+})
+brick<Brick<{ params: undefined; result: undefined; requires: { operation: LabeledIdentity } }>>(
+  async (_input, { operation }) => {
+    // @ts-expect-error metadata cannot permit propagation of undeclared failures
+    await operation('text')
+    return undefined
+  }
+)

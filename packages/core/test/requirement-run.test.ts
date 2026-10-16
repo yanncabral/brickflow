@@ -253,3 +253,151 @@ test('required operations remain bound after an asynchronous pause in the handle
     await wrapper(input, { requirements: { importer } }).onError(P._, (error) => error)
   ).toEqual({ type: 'import_failed' })
 })
+
+// Forwarding a run's public contract does not preserve private class identity.
+function structuralImportRun(run: ReturnType<ImportOperation>): ReturnType<ImportOperation> {
+  return {
+    ...run,
+    status: run.status.bind(run),
+    cancel: run.cancel.bind(run),
+    onSuccess: run.onSuccess.bind(run),
+    onError: run.onError.bind(run),
+    onFailure: run.onFailure.bind(run),
+    with: run.with.bind(run),
+    // biome-ignore lint/suspicious/noThenProperty: forward the BrickRun thenable contract
+    then: run.then.bind(run)
+  }
+}
+
+test('a structurally compatible run propagates declared failures', async () => {
+  const run = importRequestBrick(input, {
+    requirements: { importer: () => structuralImportRun(importer(input)) }
+  })
+  expect(await run.onError(P._, (error) => error)).toEqual({ type: 'import_failed' })
+})
+
+test('structural runs preserve failures left unhandled by existing handlers', async () => {
+  const run = importRequestBrick(input, {
+    requirements: {
+      importer: () => structuralImportRun(importer(input).onError(P._, () => undefined))
+    }
+  })
+  expect(await run.onError(P._, (error) => error)).toEqual({ type: 'import_failed' })
+})
+
+test('structural binding preserves the original chain memoization and controls', async () => {
+  let successes = 0
+  const successful = brick<
+    Brick<{ params: AnkiImportInput; result: AnkiImportResult; errors: ImportFailure }>
+  >(() => ({ imported: 3 }))
+  const original = successful(input).onSuccess((result) => {
+    successes++
+    return result
+  })
+  const shared = structuralImportRun(original)
+  expect(await (shared as unknown as PromiseLike<AnkiImportResult>)).toEqual({ imported: 3 })
+  const parent = brick<ImportRequestBrick>(async (value, { importer }) => {
+    const run = importer(value)
+    expect(run.id).toBe(original.id)
+    expect(await run.status()).toBe('completed')
+    return await run
+  })
+  expect(
+    await parent(input, { requirements: { importer: () => shared } }).onError(P._, () => null)
+  ).toEqual({ imported: 3 })
+  expect(successes).toBe(1)
+})
+
+test('manually thrown boundary errors remain defects through structural runs', async () => {
+  const defect = new UnhandledBrickFailureError({ type: 'import_failed' })
+  const broken = brick<
+    Brick<{ params: AnkiImportInput; result: AnkiImportResult; errors: ImportFailure }>
+  >(() => {
+    throw defect
+  })
+  const run = importRequestBrick(input, {
+    requirements: { importer: () => structuralImportRun(broken(input)) }
+  })
+  await expect(Promise.resolve(run.onError(P._, () => null))).rejects.toBe(defect)
+})
+
+test('a separate runtime copy propagates failures and retains explicit chaining', async () => {
+  const source = await Bun.file(new URL('../src/worker/run.ts', import.meta.url)).text()
+  const compiled = new Bun.Transpiler({ loader: 'ts' })
+    .transformSync(source)
+    .replace(/(['"])ts-pattern\1/g, JSON.stringify(import.meta.resolve('ts-pattern')))
+  const path = `/tmp/brickflow-run-copy-${crypto.randomUUID()}.mjs`
+  await Bun.write(path, compiled)
+  try {
+    const namespace: unknown = await import(path)
+    const foreign = namespace as typeof import('../src/worker/run')
+    expect(foreign.UnhandledBrickFailureError).not.toBe(UnhandledBrickFailureError)
+    const foreignImporter: ImportOperation = () =>
+      foreign.createBrickRun<ImportFailure, AnkiImportResult>({
+        id: crypto.randomUUID(),
+        result: Promise.resolve({ ok: false, error: { type: 'import_failed' } }),
+        status: async () => 'failed',
+        cancel: async () => {},
+        signal: async () => undefined
+      })
+    const run = importRequestBrick(input, { requirements: { importer: foreignImporter } })
+    expect(await run.onError(P._, (error) => error)).toEqual({ type: 'import_failed' })
+    const recovered = brick<ImportRequestBrick>(async (value, { importer }) => {
+      return await importer(value)
+        .onError(P._, () => ({ imported: 2 }))
+        .onSuccess((result) => result)
+    })
+    expect(
+      await recovered(input, { requirements: { importer: foreignImporter } }).onError(
+        P._,
+        () => null
+      )
+    ).toEqual({ imported: 2 })
+  } finally {
+    await Bun.file(path).delete()
+  }
+})
+
+test('a boundary error rethrown by another structural execution remains a defect', async () => {
+  const originalFailure: unknown = await Promise.resolve(
+    importer(input) as unknown as PromiseLike<AnkiImportResult>
+  ).catch((error: unknown) => error)
+  const broken = brick<
+    Brick<{
+      params: AnkiImportInput
+      result: AnkiImportResult
+      errors: ImportFailure
+    }>
+  >(() => {
+    throw originalFailure
+  })
+  const run = importRequestBrick(input, {
+    requirements: {
+      importer: () => structuralImportRun(broken(input))
+    }
+  }).onError(P._, () => null)
+  await expect(Promise.resolve(run)).rejects.toBe(originalFailure)
+})
+
+test('structural runs without shared protocol metadata use their public failure handlers', async () => {
+  const plainRun = structuralImportRun(importer(input))
+  for (const key of Object.getOwnPropertySymbols(plainRun)) Reflect.deleteProperty(plainRun, key)
+  const run = importRequestBrick(input, { requirements: { importer: () => plainRun } })
+  expect(await run.onError(P._, (error) => error)).toEqual({ type: 'import_failed' })
+})
+
+test('a detached structural failure remains a public boundary error after settlement', async () => {
+  let report!: (error: unknown) => void
+  const observed = new Promise<unknown>((resolve) => {
+    report = resolve
+  })
+  const parent = brick<ImportRequestBrick>((value, { importer }) => {
+    void Promise.resolve(importer(value) as unknown as PromiseLike<AnkiImportResult>).catch(report)
+    return { imported: 0 }
+  })
+  const run = parent(input, {
+    requirements: { importer: () => structuralImportRun(importer(input)) }
+  })
+  expect(await run.onError(P._, () => null)).toEqual({ imported: 0 })
+  expect(await observed).toBeInstanceOf(UnhandledBrickFailureError)
+})
