@@ -30,6 +30,7 @@ function readableFailure(failure: unknown): string {
 
 // Shared only between compatible runtime copies; constructor-created errors are
 // deliberately unmarked so throwing one remains an unexpected defect.
+const failureObserverProtocol = Symbol.for('brickflow.failure-observer.v1')
 const runProtocol = Symbol.for('brickflow.run.v1')
 const unhandledFailureProtocol = Symbol.for('brickflow.unhandled-failure.v1')
 
@@ -55,6 +56,12 @@ function isProtocolFailure(
     Reflect.get(value, unhandledFailureProtocol) === token &&
     Object.hasOwn(value, 'failure')
   )
+}
+
+function notifyFailure(observerTarget: unknown, error: Error, failure: unknown): void {
+  if (typeof observerTarget !== 'function') return
+  const observer: unknown = Reflect.get(observerTarget, failureObserverProtocol)
+  if (typeof observer === 'function') Reflect.apply(observer, undefined, [error, failure])
 }
 
 class UnhandledRunFailure {
@@ -139,7 +146,9 @@ class BrickRunImplementation<Error, InitialSuccess, LocalResult, RemainingError>
         if (!(error instanceof UnhandledRunFailure)) throw error
         // Only a rejection that reaches the owning handler becomes its domain failure.
         // Detached consumers always observe the documented public error.
-        throw boundaryFailure(error.failure, this[runProtocol], propagate)
+        const boundary = boundaryFailure(error.failure, this[runProtocol], propagate)
+        notifyFailure(onrejected, boundary, error.failure)
+        throw boundary
       })
       .then(onfulfilled, onrejected)
   }
@@ -192,6 +201,30 @@ function isStructuralRun(value: unknown): value is StructuralRun {
 
 class ObservedFailure {
   constructor(readonly failure: unknown) {}
+}
+
+// A terminal failure channel survives wrappers that forward then callbacks while
+// hiding run metadata, and observes failures after the selected handler finishes.
+function consumeObserved(source: unknown): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let observed: { error: unknown; failure: unknown } | undefined
+    const onRejected = (error: unknown) => {
+      reject(observed && observed.error === error ? new ObservedFailure(observed.failure) : error)
+    }
+    Object.defineProperty(onRejected, failureObserverProtocol, {
+      value: (error: unknown, failure: unknown) => {
+        observed = { error, failure }
+      }
+    })
+    if ((typeof source === 'object' || typeof source === 'function') && source !== null) {
+      const then: unknown = Reflect.get(source, 'then')
+      if (typeof then === 'function') {
+        Reflect.apply(then, source, [resolve, onRejected])
+        return
+      }
+    }
+    resolve(source)
+  })
 }
 
 function protocolToken(value: unknown): object | undefined {
@@ -249,7 +282,14 @@ class StructuralRunView implements StructuralRun {
     onrejected?: ((reason: unknown) => Rejected | PromiseLike<Rejected>) | null
   ): PromiseLike<Result | Rejected> {
     this.#execution ??= this.#consume()
-    return this.#execution.then(onfulfilled, onrejected)
+    return this.#execution
+      .catch((error: unknown) => {
+        if (isProtocolFailure(error, this[runProtocol]) && error instanceof Error) {
+          notifyFailure(onrejected, error, error.failure)
+        }
+        throw error
+      })
+      .then(onfulfilled, onrejected)
   }
 
   async #consume(): Promise<unknown> {
@@ -263,7 +303,7 @@ class StructuralRunView implements StructuralRun {
             throw new ObservedFailure(failure)
           })
       token = protocolToken(source)
-      return await source
+      return await consumeObserved(source)
     } catch (error) {
       if (error instanceof ObservedFailure || isProtocolFailure(error, token)) {
         throw boundaryFailure(error.failure, this[runProtocol], this.#scope)

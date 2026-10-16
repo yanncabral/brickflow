@@ -401,3 +401,63 @@ test('a detached structural failure remains a public boundary error after settle
   expect(await run.onError(P._, () => null)).toEqual({ imported: 0 })
   expect(await observed).toBeInstanceOf(UnhandledBrickFailureError)
 })
+
+// This public-contract wrapper hides metadata on the root and every derived run.
+function hideRunProtocol<Run extends object>(run: Run): Run {
+  return new Proxy(Object.create(null) as Run, {
+    get(_target, key) {
+      if (typeof key === 'symbol') return undefined
+      const value: unknown = Reflect.get(run, key)
+      if (typeof value !== 'function') return value
+      return (...args: unknown[]) => {
+        const result: unknown = Reflect.apply(value, run, args)
+        if (
+          ['onError', 'onSuccess', 'onFailure', 'with'].includes(key) &&
+          typeof result === 'object' &&
+          result !== null
+        )
+          return hideRunProtocol(result)
+        return result
+      }
+    }
+  })
+}
+
+test('protocol-less derived chains propagate failures left unhandled by an earlier match', async () => {
+  const hidden = hideRunProtocol(importer(input).onError(P._, () => undefined))
+  const run = importRequestBrick(input, { requirements: { importer: () => hidden } })
+  expect(await run.onError(P._, (error) => error)).toEqual({ type: 'import_failed' })
+})
+
+test('protocol-less derived chains preserve explicit recovery and callback defects', async () => {
+  const recovered = hideRunProtocol(importer(input).onError(P._, () => ({ imported: 7 })))
+  const recoverParent = brick<
+    Brick<{
+      params: AnkiImportInput
+      result: AnkiImportResult
+      errors: ImportFailure
+      requires: { operation: () => typeof recovered }
+    }>
+  >(async (_input, { operation }) => await operation())
+  expect(
+    await recoverParent(input, { requirements: { operation: () => recovered } }).onError(
+      P._,
+      () => null
+    )
+  ).toEqual({ imported: 7 })
+  const emitted: unknown = await Promise.resolve(
+    importer(input) as unknown as PromiseLike<AnkiImportResult>
+  ).catch((error: unknown) => error)
+  for (const defect of [new UnhandledBrickFailureError({ type: 'import_failed' }), emitted]) {
+    const broken = hideRunProtocol(
+      importer(input).onError(P._, (): undefined => {
+        throw defect
+      })
+    )
+    const run = importRequestBrick(input, { requirements: { importer: () => broken } }).onError(
+      P._,
+      () => null
+    )
+    await expect(Promise.resolve(run)).rejects.toBe(defect)
+  }
+})
