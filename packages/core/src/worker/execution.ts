@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import type { Brick } from '../brick/contract'
 import { failWith } from '../brick/failure'
 import { executeBrickImplementation } from '../brick/implementation'
@@ -131,7 +130,7 @@ async function executeResolvedBrick<F extends Brick>(
 export function executeBrick<F extends Brick>(
   options: ExecuteOptions<F>
 ): BrickRun<EffectiveErrorsOf<F>, ResultOf<F>> {
-  const id = options.id ?? randomUUID()
+  const id = options.id ?? globalThis.crypto.randomUUID()
   const handlers = options.signals ?? {}
   const boundary = options.directSignals
     ? directSignalChain(handlers)
