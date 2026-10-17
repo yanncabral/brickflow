@@ -1,10 +1,8 @@
 import type { SignalDefinitions, SignalFunctions } from '../signal/types'
 import type { Brick } from './contract'
-import { bindHandlerRequirements } from './execution-scope'
 import { failWith, isBrickFailure, readBrickFailure } from './failure'
 import type {
   BrickExecutionResult,
-  BrickHandler,
   BrickImplementation,
   DependencyFunctions,
   ErrorsOf,
@@ -42,22 +40,14 @@ export async function executeBrickImplementation<F extends Brick>(
   dependencies: DependencyFunctions<F>,
   signals: SignalsOf<F> extends SignalDefinitions ? SignalFunctions<SignalsOf<F>> : never
 ): Promise<BrickExecutionResult<F>> {
-  const scope = { active: true, failures: new WeakMap<Error, unknown>() }
   try {
-    const value = await implementation.handler(
-      params,
-      bindHandlerRequirements(requirements, scope) as Parameters<BrickHandler<F>>[1],
-      dependencies,
-      { fail: failWith, signals }
-    )
+    const value = await implementation.handler(params, requirements, dependencies, {
+      fail: failWith,
+      signals
+    })
     return { ok: true, value }
   } catch (error) {
-    if (error instanceof Error && scope.failures.has(error)) {
-      return { ok: false, error: scope.failures.get(error) as ErrorsOf<F> }
-    }
     if (!isBrickFailure(error)) throw error
     return { ok: false, error: readBrickFailure(error) as ErrorsOf<F> }
-  } finally {
-    scope.active = false
   }
 }

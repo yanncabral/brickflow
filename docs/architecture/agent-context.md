@@ -126,6 +126,35 @@ Same alias in different branches is valid. Incompatible contract at same path is
 
 Depth limit: 16. Fallback is conservative; required configuration never disappears.
 
+### Composing Bricks
+
+Declare other Bricks in `depends`. The third handler argument supplies callable dependencies returning `Promise<Result>`; declared failures propagate automatically, and the root run includes dependency failures in its effective error union. Dependency requirements are also collected transitively.
+
+```ts
+type ImportRequest = Brick<{
+  params: ImportInput
+  result: ImportResult
+  errors: ImportValidationFailure
+  depends: { importer: ImportBrick }
+}>
+
+const importRequest = brick<ImportRequest>(
+  async (input, _requirements, { importer }, { fail }) => {
+    if (!isSupportedFile(input)) return fail({ type: 'invalid_file_type' })
+    return await importer(input)
+  }
+)
+
+importRequest(input, {
+  dependencies: { importer: { brick: importBrick } },
+  requirements: { repository }
+})
+```
+
+Here `ImportBrick` is the child contract, `importBrick` its executable implementation, and `repository` a transitive provider required by the child. Layers can resolve the dependency instead of supplying it explicitly.
+
+Use `requires` for providers such as repositories, clients, configuration, and callbacks. Providers reach handlers unchanged, including function identity and generic or overloaded signatures. Calling a provider that returns a `BrickRun` still requires explicit failure handling; use `depends` for automatic Brick composition.
+
 ## Providers
 
 | API | Meaning |
@@ -214,21 +243,6 @@ Brick execution forwards ID, optional metadata, and optional Layer-bound `brickI
 | Worker boundary | `{ ok: false, error }`; future durable adapters must preserve structured data |
 
 `onSuccess` receives the original Brick result regardless of its position relative to failure handlers. Recovery results bypass `onSuccess`. Awaiting yields the union of success and recovery results; consumers can return discriminated values to distinguish the branches. Success and recovery types are tracked separately even when their shapes overlap. Chains are immutable and consumption is memoized per chain. A later `onSuccess` replaces an earlier success handler rather than composing transformations. Failure handlers retain registration order and first-match behavior. Handler exceptions remain defects.
-
-Inside a Brick handler, a required function returning a `BrickRun` can be awaited directly when its remaining failures are included in the enclosing Brick's declared `errors`:
-
-```ts
-type ImportRequest = Brick<{
-  params: ImportInput
-  result: ImportResult
-  errors: ImportFailure
-  requires: { importer: (input: ImportInput) => BrickRun<ImportFailure, ImportResult> }
-}>
-
-const importRequest = brick<ImportRequest>(async (input, { importer }) => await importer(input))
-```
-
-Handler requirement types permit that await while retaining the original run type, so operations remain assignable to their declared requirement contracts when forwarded to helpers or object properties. Explicit `this` parameters remain required. Contextual awaitability is added only to exactly recognized monomorphic signatures and supported pairs of overloads. Other callable shapes, including sets with more than two overloads, retain the complete original type and require explicit failure handling; no traversal limit truncates their declarations. Generic identity operations (`<Value>(value: Value) => BrickRun<Failure, Value>`, including constraints and augmented callable properties) retain input/output inference; a generic identity signature, including one with a constraint, combined with a concrete overload also retains inference and the concrete result in either declaration order. Other generic signatures are preserved unchanged and may still require explicit failure handlers. Unhandled run failures propagate as structured domain failures when their rejection reaches the consuming handler. Run consumption always rejects with the public `UnhandledBrickFailureError`; the active owning handler recognizes its own run rejections through a private weak association and restores the structured failure. Manually thrown boundary errors and rejections owned by another handler remain defects. Callable requirements explicitly bind returned runs to their consuming handler; no ambient async context or Node API is required. Compatible runtime copies and structural run wrappers use a versioned internal symbol protocol that identifies the originating chain, preserving memoized consumption and execution controls. Structural runs without run metadata can report terminal typed failures through a versioned callback observer on consumption, including when an earlier matching handler leaves a failure unhandled; public failure handlers remain a fallback for other structural implementations. Their bound view memoizes the resulting consumption. The protocol is process-local and is not a durable serialization format. Each handler owns a separate scope that is revoked on settlement, including on failure. Runs consumed through captured external functions without passing through the handler's requirements retain external boundary behavior. Detached consumers observe the public boundary error whether the owning handler is still active or has settled, including when consumption began before settlement. A detached failure does not force its parent to fail. Consumption outside handlers still requires exhaustive handling and rejects forced unhandled consumption with `UnhandledBrickFailureError`, including when the same run was already consumed inside a handler.
 
 Never collapse typed failure into generic `Error` across durable boundary.
 
