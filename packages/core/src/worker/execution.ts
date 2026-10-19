@@ -18,6 +18,7 @@ import { createSignalHandlerChain, resolveSignal } from '../signal/handler'
 import { flattenNamespacedSignalHandlers } from '../signal/namespace'
 import type { SignalHandlerChain, UnknownSignalHandlers } from '../signal/types'
 import type { Worker } from './contract'
+import { createExecutionId } from './execution-id'
 import { localWorker } from './local-worker'
 import { createBrickRun } from './run'
 import type { BrickRun, RunMetadata } from './types'
@@ -130,7 +131,7 @@ async function executeResolvedBrick<F extends Brick>(
 export function executeBrick<F extends Brick>(
   options: ExecuteOptions<F>
 ): BrickRun<EffectiveErrorsOf<F>, ResultOf<F>> {
-  const id = options.id ?? globalThis.crypto.randomUUID()
+  const id = options.id ?? createExecutionId()
   const handlers = options.signals ?? {}
   const boundary = options.directSignals
     ? directSignalChain(handlers)

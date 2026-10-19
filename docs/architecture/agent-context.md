@@ -215,7 +215,7 @@ interface Worker {
 }
 ```
 
-Core exports `Worker`, `LocalWorker`, and default `localWorker`. Core uses standard ECMAScript and Web APIs, including `crypto.randomUUID()` for generated execution IDs and `queueMicrotask` for local scheduling. It has no Node built-in imports and can be bundled for browsers and Cloudflare Workers without Node compatibility flags.
+Core exports `Worker`, `LocalWorker`, and default `localWorker`. Core uses standard ECMAScript and Web APIs, including `crypto.randomUUID()` for generated execution IDs (with a UUID v4 fallback using `crypto.getRandomValues()` when `randomUUID` is unavailable) and `queueMicrotask` for local scheduling. It has no Node built-in imports and can be bundled for browsers and Cloudflare Workers without Node compatibility flags.
 
 Local Worker:
 
