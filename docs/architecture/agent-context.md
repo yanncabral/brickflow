@@ -126,6 +126,35 @@ Same alias in different branches is valid. Incompatible contract at same path is
 
 Depth limit: 16. Fallback is conservative; required configuration never disappears.
 
+### Composing Bricks
+
+Declare other Bricks in `depends`. The third handler argument supplies callable dependencies returning `Promise<Result>`; declared failures propagate automatically, and the root run includes dependency failures in its effective error union. Dependency requirements are also collected transitively.
+
+```ts
+type ImportRequest = Brick<{
+  params: ImportInput
+  result: ImportResult
+  errors: ImportValidationFailure
+  depends: { importer: ImportBrick }
+}>
+
+const importRequest = brick<ImportRequest>(
+  async (input, _requirements, { importer }, { fail }) => {
+    if (!isSupportedFile(input)) return fail({ type: 'invalid_file_type' })
+    return await importer(input)
+  }
+)
+
+importRequest(input, {
+  dependencies: { importer: { brick: importBrick } },
+  requirements: { repository }
+})
+```
+
+Here `ImportBrick` is the child contract, `importBrick` its executable implementation, and `repository` a transitive provider required by the child. Layers can resolve the dependency instead of supplying it explicitly.
+
+Use `requires` for providers such as repositories, clients, configuration, and callbacks. Providers reach handlers unchanged, including function identity and generic or overloaded signatures. Calling a provider that returns a `BrickRun` still requires explicit failure handling; use `depends` for automatic Brick composition.
+
 ## Providers
 
 | API | Meaning |
@@ -186,7 +215,7 @@ interface Worker {
 }
 ```
 
-Core exports `Worker`, `LocalWorker`, and default `localWorker`.
+Core exports `Worker`, `LocalWorker`, and default `localWorker`. Core uses standard ECMAScript and Web APIs, including `crypto.randomUUID()` for generated execution IDs (with a UUID v4 fallback using `crypto.getRandomValues()` when `randomUUID` is unavailable) and `queueMicrotask` for local scheduling. It has no Node built-in imports and can be bundled for browsers and Cloudflare Workers without Node compatibility flags.
 
 Local Worker:
 
