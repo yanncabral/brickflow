@@ -1,5 +1,11 @@
 # brickflow
 
+## 0.0.5
+
+### Patch Changes
+
+- bac4750: Generate execution IDs with Web Crypto instead of Node's crypto module so core works in browsers and Cloudflare Workers without Node compatibility flags. Fall back to a UUID v4 generated with `crypto.getRandomValues()` when `randomUUID` is unavailable, including in non-secure browser contexts.
+
 ## 0.0.4
 
 ### Patch Changes
