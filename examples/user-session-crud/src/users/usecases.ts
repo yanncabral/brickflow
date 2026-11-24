@@ -4,7 +4,7 @@ import type { User, UserRepository } from './user'
 export type GetUser = Brick<{
   params: { id: string }
   result: User
-  errors: { type: 'user-not-found'; id: string }
+  error: { type: 'user-not-found'; id: string }
   requires: { userRepository: UserRepository }
 }>
 
@@ -16,7 +16,7 @@ export const getUser = brick<GetUser>(async ({ id }, { userRepository }, _deps, 
 export type CreateUser = Brick<{
   params: { email: string; name: string }
   result: User
-  errors: { type: 'email-already-in-use'; email: string }
+  error: { type: 'email-already-in-use'; email: string }
   requires: { userRepository: UserRepository; idGenerator: () => string; clock: () => Date }
 }>
 
@@ -43,7 +43,7 @@ export const listUsers = brick<ListUsers>((_params, { userRepository }) => userR
 export type UpdateUser = Brick<{
   params: { id: string; name: string }
   result: User
-  errors: { type: 'user-not-found'; id: string }
+  error: { type: 'user-not-found'; id: string }
   requires: { userRepository: UserRepository; clock: () => Date }
 }>
 
@@ -60,7 +60,7 @@ export const updateUser = brick<UpdateUser>(
 export type DeleteUser = Brick<{
   params: { id: string }
   result: undefined
-  errors: { type: 'user-not-found'; id: string }
+  error: { type: 'user-not-found'; id: string }
   requires: { userRepository: UserRepository }
 }>
 

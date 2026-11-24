@@ -347,7 +347,7 @@ const locallyResolvedApplication = new Layer('locally-resolved-application', {
 locallyResolvedApplication.repository.dependencyCaller(undefined)
 locallyResolvedApplication.provide({ db }).repository.dependencyCaller(undefined)
 
-type Query = DeclaredDependencyBrick & { errors: 'query-failed' }
+type Query = DeclaredDependencyBrick & { error: 'query-failed' }
 const failingQuery = brick<Query, { requires: { db: typeof db } }>(
   ({ id }, { db }, _dependencies, { fail }) => db.find(id) || fail('query-failed')
 )

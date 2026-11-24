@@ -26,7 +26,7 @@ Current behavior. Read after `AGENTS.md`. Specs are history.
 type UseCase = Brick<{
   params: Input
   result: Output
-  errors: DomainFailure
+  error: DomainFailure
   requires: Requirements
   depends: { child: ChildBrick }
   signals: {
@@ -37,7 +37,9 @@ type UseCase = Brick<{
 const useCase = brick<UseCase>(handler)
 ```
 
-`Brick<{ ... }>` provides autocomplete for `params`, `result`, `errors`, `requires`, `depends`, and `signals`. `params` and `result` are required. The other fields are optional and default respectively to `never`, an empty requirements object, an empty dependencies object, and an empty signals object.
+`Brick<{ ... }>` provides autocomplete for `params`, `result`, `error`, `requires`, `depends`, and `signals`. `params` and `result` are required. The other fields are optional and default respectively to `never`, an empty requirements object, an empty dependencies object, and an empty signals object.
+
+Use a union in `error` to declare multiple domain failure variants. When migrating older contracts, rename `errors` to `error`. The `ErrorsOf` and `EffectiveErrorsOf` utility types keep their names.
 
 An implementation can add providers or dependency aliases through a second type argument.
 
@@ -146,7 +148,7 @@ Declare other Bricks in `depends`. The third handler argument supplies callable 
 type ImportRequest = Brick<{
   params: ImportInput
   result: ImportResult
-  errors: ImportValidationFailure
+  error: ImportValidationFailure
   depends: { importer: ImportBrick }
 }>
 

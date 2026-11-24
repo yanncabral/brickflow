@@ -13,7 +13,7 @@ interface UserRepository {
 type GetUserBrick = Brick<{
   params: { id: string }
   result: User
-  errors: 'user-not-found'
+  error: 'user-not-found'
   requires: { users: UserRepository }
 }>
 

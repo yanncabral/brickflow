@@ -12,13 +12,15 @@ import type {
 interface BrickConfig {
   params: unknown
   result: unknown
-  errors?: unknown
+  error?: unknown
   requires?: object
   depends?: Readonly<Record<string, Brick>>
   signals?: SignalDefinitions
 }
 
-export type Brick<Config extends BrickConfig = BrickConfig> = Config
+export type Brick<
+  Config extends BrickConfig & Record<Extract<keyof Config, 'errors'>, never> = BrickConfig
+> = Config
 
 type ImplementationConfig = Pick<BrickConfig, 'requires' | 'depends'>
 

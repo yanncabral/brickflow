@@ -31,15 +31,21 @@ void (undefined as _ObsoleteSpecOf)
 type GetUserBrick = Brick<{
   params: { id: string }
   result: { id: string }
-  errors: 'user-not-found' | { type: 'unavailable'; retryAfter: number }
+  error: 'user-not-found' | { type: 'unavailable'; retryAfter: number }
   requires: { users: { find(id: string): Promise<{ id: string } | undefined> } }
   signals: { refresh: { request: { force: boolean }; response: 'refreshed' } }
 }>
 
+// @ts-expect-error declare the failure type with error
+type LegacyErrorBrick = Brick<{ params: undefined; result: number; errors: 'missing' }>
+void (undefined as unknown as LegacyErrorBrick)
+// @ts-expect-error structural contracts passed directly to brick also reject errors
+brick<{ params: undefined; result: number; errors: 'missing' }>(() => 1)
+
 type GetProfileBrick = Brick<{
   params: { userId: string }
   result: { userId: string }
-  errors: 'profile-not-found'
+  error: 'profile-not-found'
   requires: { profiles: { has(userId: string): boolean } }
   depends: { getUser: GetUserBrick }
 }>

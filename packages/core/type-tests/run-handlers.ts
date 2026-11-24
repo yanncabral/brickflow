@@ -3,7 +3,7 @@ import { type Brick, brick, Layer, P } from '../src/index'
 type Read = Brick<{
   params: { id: string }
   result: { id: string }
-  errors: { type: 'missing'; id: string } | { type: 'denied' }
+  error: { type: 'missing'; id: string } | { type: 'denied' }
 }>
 const read = brick<Read>(({ id }) => ({ id }))
 const initial = read({ id: 'asset' })
