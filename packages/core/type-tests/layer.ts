@@ -271,6 +271,83 @@ const dependencyCaller = brick<DependencyCallerBrick>(async (_params, _requireme
 
 new Layer('missing-dependency', { dependencyCaller })
 new Layer('compatible-direct-dependency', { dependencyCaller, child: compatibleDependency })
+
+type DatabaseDependency = DeclaredDependencyBrick & {
+  requires: { db: { find(id: string): string } }
+}
+
+const databaseDependency = brick<DatabaseDependency>(({ id }, { db }) => db.find(id))
+const db = { find: (id: string) => id }
+const repositoryLayer = new Layer('repository', { child: databaseDependency })
+const databaseApplication = new Layer('database-application', {
+  dependencyCaller,
+  repositoryLayer,
+  independent: compatibleDependency
+})
+
+// @ts-expect-error the selected repository Brick requires db
+databaseApplication.dependencyCaller(undefined)
+// @ts-expect-error .run also requires the selected Brick's provider
+databaseApplication.dependencyCaller.run(undefined, {})
+// @ts-expect-error a per-run provider must satisfy the selected Brick's requirement type
+databaseApplication.dependencyCaller(undefined, { requirements: { db: { find: () => 1 } } })
+databaseApplication.dependencyCaller(undefined, { requirements: { db } })
+databaseApplication.provide({ db }).dependencyCaller(undefined)
+const optionalProvider: { db?: typeof db } = {}
+const partiallyProvidedApplication = databaseApplication.provide(optionalProvider)
+// @ts-expect-error an optional provider does not guarantee that db was supplied
+partiallyProvidedApplication.dependencyCaller(undefined)
+partiallyProvidedApplication.dependencyCaller(undefined, { requirements: { db } })
+databaseApplication.independent({ id: '1' })
+
+type NumberQuery = Brick<{
+  params: { id: string }
+  result: number
+  requires: { db: { find(id: string): number } }
+}>
+const numberQuery = brick<NumberQuery>(({ id }, { db }) => db.find(id))
+const numbered = new Layer('numbered-application', {
+  dependencyCaller,
+  repositoryLayer,
+  numbers: new Layer('numbers', { numberQuery }).provide({ db: { find: () => 1 } })
+})
+// @ts-expect-error a provider installed by another branch has an incompatible type
+numbered.dependencyCaller(undefined)
+numbered.dependencyCaller(undefined, { requirements: { db } })
+
+// @ts-expect-error direct calls to the implementation require its own provider
+databaseDependency({ id: '1' })
+databaseDependency({ id: '1' }, { requirements: { db } })
+// @ts-expect-error direct composition requires a dependency matching the declared contract
+dependencyCaller(undefined, { dependencies: { child: { brick: databaseDependency } } })
+
+const indirectApplication = new Layer('indirect-application', {
+  repositoryLayer,
+  root: brick<
+    Brick<{
+      params: undefined
+      result: string
+      depends: { intermediate: DependencyCallerBrick }
+    }>
+  >((_, __, { intermediate }) => intermediate(undefined))
+})
+const indirectDependencies = { intermediate: { brick: dependencyCaller } }
+// @ts-expect-error a supplied node can resolve a child with an extra provider
+indirectApplication.root(undefined, { dependencies: indirectDependencies })
+indirectApplication.root(undefined, {
+  dependencies: indirectDependencies,
+  requirements: { db }
+})
+
+const reportingLayer = new Layer('reporting', { child: compatibleDependency })
+const locallyResolvedApplication = new Layer('locally-resolved-application', {
+  repository: new Layer('repository', { dependencyCaller, child: databaseDependency }),
+  reportingLayer
+})
+// @ts-expect-error local resolution selects the database Brick over another alias match
+locallyResolvedApplication.repository.dependencyCaller(undefined)
+locallyResolvedApplication.provide({ db }).repository.dependencyCaller(undefined)
+
 // @ts-expect-error a present dependency alias must implement the declared Brick shape
 new Layer('incompatible-direct-dependency', { dependencyCaller, child: incompatibleDependency })
 

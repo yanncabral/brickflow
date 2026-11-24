@@ -299,6 +299,50 @@ type OverrideValues<Entries extends LayerEntries, Provided extends Providers> = 
 
 type DependencyBrick<Value> = Value extends Brick ? Value : never
 
+type SelectedLayerRequirements<
+  RootEntries extends LayerEntries,
+  ScopeEntries extends LayerEntries,
+  F extends Brick,
+  Depth extends readonly unknown[] = []
+> = Depth['length'] extends 16
+  ? keyof DependenciesOf<F> extends never
+    ? RequirementsOf<F>
+    : EffectiveRequirementsOf<F> & RequirementsFromEntries<RootEntries>
+  : RequirementsOf<F> &
+      UnionToIntersection<
+        {
+          [Alias in keyof DependenciesOf<F>]: [
+            ResolvedBrickEntry<RootEntries, ScopeEntries, Alias>
+          ] extends [never]
+            ? SelectedLayerRequirements<
+                RootEntries,
+                ScopeEntries,
+                DependencyBrick<DependenciesOf<F>[Alias]>,
+                [...Depth, unknown]
+              >
+            : ResolvedBrickEntry<RootEntries, ScopeEntries, Alias> extends {
+                  readonly implementation: BrickImplementation<infer Selected extends Brick>
+                  readonly scope: infer SelectedScope extends LayerEntries
+                }
+              ? SelectedLayerRequirements<RootEntries, SelectedScope, Selected, [...Depth, unknown]>
+              : never
+        }[keyof DependenciesOf<F>]
+      >
+
+type SatisfiedRequirementKeys<Requirements, Provided extends Providers> = {
+  [Key in keyof Requirements]-?: [Provided] extends [Required<Pick<Requirements, Key>>]
+    ? Key
+    : never
+}[keyof Requirements]
+
+type MissingLayerRequirements<
+  RootEntries extends LayerEntries,
+  ScopeEntries extends LayerEntries,
+  F extends Brick,
+  Provided extends Providers,
+  Requirements = SelectedLayerRequirements<RootEntries, ScopeEntries, F>
+> = Omit<Requirements, SatisfiedRequirementKeys<Requirements, Provided>>
+
 type SuppliedDependencyNode<
   RootEntries extends LayerEntries,
   ScopeEntries extends LayerEntries,
@@ -445,9 +489,9 @@ type BoundBrickRunOptions<
   Provided extends Providers,
   BrickPath extends readonly PropertyKey[]
 > = Omit<BrickRunOptions<F>, 'requirements' | 'dependencies' | 'signals'> &
-  (keyof Omit<EffectiveRequirementsOf<F>, keyof Provided> extends never
+  (keyof MissingLayerRequirements<RootEntries, ScopeEntries, F, Provided> extends never
     ? { readonly requirements?: never }
-    : { readonly requirements: Omit<EffectiveRequirementsOf<F>, keyof Provided> }) &
+    : { readonly requirements: MissingLayerRequirements<RootEntries, ScopeEntries, F, Provided> }) &
   (keyof UnresolvedDependencies<RootEntries, ScopeEntries, F> extends never
     ? { readonly dependencies?: never }
     : { readonly dependencies: UnresolvedDependencies<RootEntries, ScopeEntries, F> }) &
@@ -483,7 +527,7 @@ type BoundBrickRunOptionArgs<
   ScopeEntries extends LayerEntries,
   Provided extends Providers,
   BrickPath extends readonly PropertyKey[]
-> = keyof Omit<EffectiveRequirementsOf<F>, keyof Provided> extends never
+> = keyof MissingLayerRequirements<RootEntries, ScopeEntries, F, Provided> extends never
   ? keyof UnresolvedDependencies<RootEntries, ScopeEntries, F> extends never
     ? keyof (OwnSignalHandlers<F> &
         LayerSignalHandlersForDependencies<

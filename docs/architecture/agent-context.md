@@ -106,6 +106,8 @@ Nested Layer entry keys organize access. Durable paths use nested Layer `id`, th
 
 Bound runs require only unresolved configuration. Bound Bricks are also callable: `users.getGreeting({ id: 'ada' })` is equivalent to `users.getGreeting.run({ id: 'ada' })`, preserving provider and dependency resolution, signal paths, execution controls, and durable identity.
 
+A resolved implementation can extend the Brick shape declared in `depends` with its own `requires`. For example, if `SqlUsers` is `UserList & { requires: { db: Database } }`, a handler using `depends: { listUsers: UserList }` can call a Layer entry created with `brick<SqlUsers>(handler)`. The resulting bound calls require `db` unless a Layer already provides a compatible value. An unconfigured Layer can still be composed or configured before a call.
+
 ## Dependency resolution
 
 Layer-bound order:
@@ -124,7 +126,7 @@ secondary.repository
 
 Same alias in different branches is valid. Incompatible contract at same path is a type error.
 
-Depth limit: 16. Fallback is conservative; required configuration never disappears.
+Depth limit: 16. When a dependency branch continues beyond that limit, bound provider validation falls back to the declared contracts and the Layer tree's provider requirements.
 
 ### Composing Bricks
 
