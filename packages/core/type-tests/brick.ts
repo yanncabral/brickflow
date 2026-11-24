@@ -6,6 +6,7 @@ import {
   type Brick,
   type BrickHandler,
   type BrickImplementation,
+  type BrickOf,
   brick,
   type DependenciesOf,
   type ErrorsOf,
@@ -182,6 +183,51 @@ brick<NumericSignalNameBrick>(() => undefined)
 
 const quiet = brick<QuietBrick>(() => 1)
 quiet satisfies BrickImplementation<QuietBrick>
+type _QuietContract = Expect<Equal<BrickOf<typeof quiet>, QuietBrick>>
+
+type QuietAdditions = {
+  requires: { offset: number }
+  depends: { child: QuietBrick }
+}
+
+const configuredQuiet = brick<QuietBrick, QuietAdditions>(
+  async (_params, { offset }, { child }) => offset + (await child(undefined))
+)
+configuredQuiet satisfies BrickImplementation<QuietBrick & QuietAdditions>
+type _ConfiguredRequirements = Expect<
+  Equal<RequirementsOf<BrickOf<typeof configuredQuiet>>, QuietAdditions['requires']>
+>
+type _ConfiguredDependencies = Expect<
+  Equal<DependenciesOf<BrickOf<typeof configuredQuiet>>, QuietAdditions['depends']>
+>
+const quietDependencies = { child: { brick: quiet } }
+configuredQuiet(undefined, { dependencies: quietDependencies, requirements: { offset: 2 } })
+// @ts-expect-error a direct call must provide implementation requirements
+configuredQuiet(undefined, { dependencies: quietDependencies })
+// @ts-expect-error .run must bind implementation dependencies
+configuredQuiet.run(undefined, { requirements: { offset: 2 } })
+
+brick<
+  GetProfileBrick,
+  { requires: { log(message: string): void }; depends: { child: QuietBrick } }
+>(async ({ userId }, { profiles, log }, { getUser, child }, { fail }) => {
+  log(String(await child(undefined)))
+  const user = await getUser({ id: userId })
+  return profiles.has(user.id) ? { userId: user.id } : fail('profile-not-found')
+})
+
+// @ts-expect-error implementation configuration can only add requires and depends
+brick<QuietBrick, { requires: { offset: number }; result: string }>(() => 1)
+// @ts-expect-error implementation requirements cannot redeclare a contract requirement
+brick<GetProfileBrick, { requires: { profiles: { has(userId: string): boolean } } }>(() => ({
+  userId: 'ada'
+}))
+// @ts-expect-error implementation dependencies cannot redeclare a contract alias
+brick<GetProfileBrick, { depends: { getUser: QuietBrick } }>(() => ({ userId: 'ada' }))
+// @ts-expect-error implementation dependencies must be Brick contracts
+brick<QuietBrick, { depends: { child: number } }>(() => 1)
+// @ts-expect-error implementation dependency aliases follow the same path rules
+brick<QuietBrick, { depends: { 'invalid.alias': QuietBrick } }>(() => 1)
 
 const alternateGetUser = brick<GetUserBrick>(async ({ id }) => ({ id }))
 alternateGetUser satisfies BrickImplementation<GetUserBrick>

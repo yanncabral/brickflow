@@ -39,6 +39,16 @@ const useCase = brick<UseCase>(handler)
 
 `Brick<{ ... }>` provides autocomplete for `params`, `result`, `errors`, `requires`, `depends`, and `signals`. `params` and `result` are required. The other fields are optional and default respectively to `never`, an empty requirements object, an empty dependencies object, and an empty signals object.
 
+An implementation can add providers or dependency aliases through a second type argument.
+
+```ts
+const sqlUsers = brick<UserList, { requires: { db: Database } }>((_, { db }) =>
+  db.selectUsers()
+)
+```
+
+The second argument can declare `requires`, `depends`, or both. Their keys must be new to the corresponding section of the shared contract. The handler and the resulting Brick use the combined contract. Like the shared contract, the implementation configuration is erased at runtime.
+
 Rules:
 
 - A named Brick contract is a reusable, erased TypeScript type; multiple implementations may share it.
@@ -82,7 +92,7 @@ Dependency nodes are always explicit:
 dependencies: { child: { brick: child } }
 ```
 
-Bare Brick values are invalid. Direct runs require recursive `dependencies` for every selected Brick child. Layer-bound runs supply only unresolved branches; a Layer-resolved node may contain `dependencies` without repeating `brick`.
+Bare Brick values are invalid. Direct runs require recursive `dependencies` for every selected Brick child. A direct caller supplying a Brick with implementation-specific configuration declares its combined contract in `depends`. Layer-bound runs supply only unresolved branches; a Layer-resolved node may contain `dependencies` without repeating `brick`.
 
 ### Layer-bound
 
@@ -106,7 +116,7 @@ Nested Layer entry keys organize access. Durable paths use nested Layer `id`, th
 
 Bound runs require only unresolved configuration. Bound Bricks are also callable: `users.getGreeting({ id: 'ada' })` is equivalent to `users.getGreeting.run({ id: 'ada' })`, preserving provider and dependency resolution, signal paths, execution controls, and durable identity.
 
-A resolved implementation can extend the Brick shape declared in `depends` with its own `requires`. For example, if `SqlUsers` is `UserList & { requires: { db: Database } }`, a handler using `depends: { listUsers: UserList }` can call a Layer entry created with `brick<SqlUsers>(handler)`. The resulting bound calls require `db` unless a Layer already provides a compatible value. An unconfigured Layer can still be composed or configured before a call.
+A Layer can resolve `depends: { listUsers: UserList }` to the `sqlUsers` implementation above. The resulting bound calls require `db` unless a Layer already provides a compatible value. They also include failures from any dependencies the selected implementation adds. An unconfigured Layer can still be composed or configured before a call.
 
 ## Dependency resolution
 

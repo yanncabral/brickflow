@@ -272,11 +272,10 @@ const dependencyCaller = brick<DependencyCallerBrick>(async (_params, _requireme
 new Layer('missing-dependency', { dependencyCaller })
 new Layer('compatible-direct-dependency', { dependencyCaller, child: compatibleDependency })
 
-type DatabaseDependency = DeclaredDependencyBrick & {
-  requires: { db: { find(id: string): string } }
-}
-
-const databaseDependency = brick<DatabaseDependency>(({ id }, { db }) => db.find(id))
+const databaseDependency = brick<
+  DeclaredDependencyBrick,
+  { requires: { db: { find(id: string): string } } }
+>(({ id }, { db }) => db.find(id))
 const db = { find: (id: string) => id }
 const repositoryLayer = new Layer('repository', { child: databaseDependency })
 const databaseApplication = new Layer('database-application', {
@@ -347,6 +346,28 @@ const locallyResolvedApplication = new Layer('locally-resolved-application', {
 // @ts-expect-error local resolution selects the database Brick over another alias match
 locallyResolvedApplication.repository.dependencyCaller(undefined)
 locallyResolvedApplication.provide({ db }).repository.dependencyCaller(undefined)
+
+type Query = DeclaredDependencyBrick & { errors: 'query-failed' }
+const failingQuery = brick<Query, { requires: { db: typeof db } }>(
+  ({ id }, { db }, _dependencies, { fail }) => db.find(id) || fail('query-failed')
+)
+const delegatedDatabaseDependency = brick<DeclaredDependencyBrick, { depends: { query: Query } }>(
+  (params, _requirements, { query }) => query(params)
+)
+const delegatingApplication = new Layer('delegating-application', {
+  dependencyCaller,
+  child: delegatedDatabaseDependency,
+  query: failingQuery,
+  independent: compatibleDependency
+})
+// @ts-expect-error a descendant introduced by the implementation requires its provider
+delegatingApplication.dependencyCaller(undefined)
+const configuredDelegatingApplication = delegatingApplication.provide({ db })
+configuredDelegatingApplication.dependencyCaller(undefined).unhandledErrors satisfies 'query-failed'
+configuredDelegatingApplication.dependencyCaller
+  .run(undefined)
+  .onError('query-failed', () => 'fallback')
+configuredDelegatingApplication.independent({ id: '1' }) satisfies PromiseLike<string>
 
 // @ts-expect-error a present dependency alias must implement the declared Brick shape
 new Layer('incompatible-direct-dependency', { dependencyCaller, child: incompatibleDependency })
