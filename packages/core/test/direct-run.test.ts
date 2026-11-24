@@ -46,7 +46,7 @@ type GrandchildBrick = Brick<{
 type ChildBrick = Brick<{
   params: { id: string }
   result: string
-  errors: 'missing'
+  error: 'missing'
   requires: { repository: { find(id: string): string | undefined } }
   depends: { grandchild: GrandchildBrick }
 }>

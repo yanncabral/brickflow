@@ -11,7 +11,7 @@ Uma operação relevante deve nascer como um use case com contrato explícito:
 type CreateUser = Brick<{
   params: { email: string; name: string }
   result: User
-  errors: { type: 'email-already-used'; email: string }
+  error: { type: 'email-already-used'; email: string }
   requires: { userRepository: UserRepository; clock: () => Date }
 }>
 ```
@@ -89,7 +89,7 @@ O use case declara o requisito:
 type RevokeSession = Brick<{
   params: { id: string }
   result: undefined
-  errors: { type: 'session-not-found'; id: string }
+  error: { type: 'session-not-found'; id: string }
   requires: { sessionRepository: SessionRepository; clock: () => Date }
 }>
 ```
@@ -110,7 +110,7 @@ Use `depends` para comportamento fornecido por outro Brick:
 type AuthenticateUser = Brick<{
   params: LoginInput
   result: AuthenticatedSession
-  errors: UserErrors | SessionErrors
+  error: UserErrors | SessionErrors
   depends: { findUserByEmail: FindUserByEmail }
 }>
 ```
@@ -136,7 +136,7 @@ contrato que as produz:
 type RefreshSession = Brick<{
   params: { token: string }
   result: Session
-  errors:
+  error:
     | { type: 'session-not-found' }
     | { type: 'session-expired' }
     | { type: 'session-revoked' }

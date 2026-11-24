@@ -116,7 +116,7 @@ interface BrickRunHandlers<Error, InitialSuccess, LocalResult, RemainingError, R
     RemainingErrors<RemainingError, Pattern, HandlerResult>,
     RecoveredResult | RecoveryValue<HandlerResult>
   >
-  /** @deprecated Use onError to match the Brick contract's errors field. */
+  /** @deprecated Use onError to match the Brick contract's error field. */
   onFailure: BrickRunHandlers<
     Error,
     InitialSuccess,

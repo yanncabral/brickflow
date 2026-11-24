@@ -34,7 +34,7 @@ export const createSession = brick<CreateSession>(async ({ userId, ttlMs }, requ
 export type RefreshSession = Brick<{
   params: { token: string; ttlMs: number }
   result: Session
-  errors: SessionError
+  error: SessionError
   requires: {
     sessionRepository: SessionRepository
     tokenGenerator: () => string
@@ -61,7 +61,7 @@ export const refreshSession = brick<RefreshSession>(
 export type RevokeSession = Brick<{
   params: { id: string }
   result: undefined
-  errors: { type: 'session-not-found'; id: string }
+  error: { type: 'session-not-found'; id: string }
   requires: { sessionRepository: SessionRepository; clock: () => Date }
 }>
 

@@ -11,13 +11,13 @@ interface ImportRepository {
 type ImportBrick = Brick<{
   params: AnkiImportInput
   result: AnkiImportResult
-  errors: ImportFailure
+  error: ImportFailure
   requires: { repository: ImportRepository }
 }>
 type ImportRequestBrick = Brick<{
   params: AnkiImportInput
   result: AnkiImportResult
-  errors: ValidationFailure
+  error: ValidationFailure
   depends: { importer: ImportBrick }
 }>
 const MAX_ANKI_IMPORT_BYTES = 10

@@ -16,7 +16,7 @@ type DeclaredProperty<F, Key extends PropertyKey, Default> =
 
 export type ParamsOf<F extends Brick> = F['params']
 export type ResultOf<F extends Brick> = F['result']
-export type ErrorsOf<F extends Brick> = DeclaredProperty<F, 'errors', never>
+export type ErrorsOf<F extends Brick> = DeclaredProperty<F, 'error', never>
 export type RequirementsOf<F extends Brick> =
   DeclaredProperty<F, 'requires', Empty> extends object
     ? DeclaredProperty<F, 'requires', Empty>
@@ -30,8 +30,9 @@ export type SignalsOf<F extends Brick> =
     ? DeclaredProperty<F, 'signals', Empty>
     : Empty
 
-export type ValidBrick<F extends Brick> =
-  HasValidPathSegmentKeys<DependenciesOf<F>> extends true
+export type ValidBrick<F extends Brick> = 'errors' extends keyof F
+  ? never
+  : HasValidPathSegmentKeys<DependenciesOf<F>> extends true
     ? HasValidPathSegmentKeys<SignalsOf<F>> extends true
       ? F
       : never

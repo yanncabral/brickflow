@@ -26,7 +26,7 @@ Current behavior. Read after `AGENTS.md`. Specs are history.
 type UseCase = Brick<{
   params: Input
   result: Output
-  errors: DomainFailure
+  error: DomainFailure
   requires: Requirements
   depends: { child: ChildBrick }
   signals: {
@@ -37,7 +37,19 @@ type UseCase = Brick<{
 const useCase = brick<UseCase>(handler)
 ```
 
-`Brick<{ ... }>` provides autocomplete for `params`, `result`, `errors`, `requires`, `depends`, and `signals`. `params` and `result` are required. The other fields are optional and default respectively to `never`, an empty requirements object, an empty dependencies object, and an empty signals object.
+`Brick<{ ... }>` provides autocomplete for `params`, `result`, `error`, `requires`, `depends`, and `signals`. `params` and `result` are required. The other fields are optional and default respectively to `never`, an empty requirements object, an empty dependencies object, and an empty signals object.
+
+Use a union in `error` to declare multiple domain failure variants. When migrating older contracts, rename `errors` to `error`. The `ErrorsOf` and `EffectiveErrorsOf` utility types keep their names.
+
+An implementation can add providers or dependency aliases through a second type argument.
+
+```ts
+const sqlUsers = brick<UserList, { requires: { db: Database } }>((_, { db }) =>
+  db.selectUsers()
+)
+```
+
+The second argument can declare `requires`, `depends`, or both. Their keys must be new to the corresponding section of the shared contract. The handler and the resulting Brick use the combined contract. Like the shared contract, the implementation configuration is erased at runtime.
 
 Rules:
 
@@ -82,7 +94,7 @@ Dependency nodes are always explicit:
 dependencies: { child: { brick: child } }
 ```
 
-Bare Brick values are invalid. Direct runs require recursive `dependencies` for every selected Brick child. Layer-bound runs supply only unresolved branches; a Layer-resolved node may contain `dependencies` without repeating `brick`.
+Bare Brick values are invalid. Direct runs require recursive `dependencies` for every selected Brick child. A direct caller supplying a Brick with implementation-specific configuration declares its combined contract in `depends`. Layer-bound runs supply only unresolved branches; a Layer-resolved node may contain `dependencies` without repeating `brick`.
 
 ### Layer-bound
 
@@ -106,6 +118,8 @@ Nested Layer entry keys organize access. Durable paths use nested Layer `id`, th
 
 Bound runs require only unresolved configuration. Bound Bricks are also callable: `users.getGreeting({ id: 'ada' })` is equivalent to `users.getGreeting.run({ id: 'ada' })`, preserving provider and dependency resolution, signal paths, execution controls, and durable identity.
 
+A Layer can resolve `depends: { listUsers: UserList }` to the `sqlUsers` implementation above. The resulting bound calls require `db` unless a Layer already provides a compatible value. They also include failures from any dependencies the selected implementation adds. An unconfigured Layer can still be composed or configured before a call.
+
 ## Dependency resolution
 
 Layer-bound order:
@@ -124,7 +138,7 @@ secondary.repository
 
 Same alias in different branches is valid. Incompatible contract at same path is a type error.
 
-Depth limit: 16. Fallback is conservative; required configuration never disappears.
+Depth limit: 16. When a dependency branch continues beyond that limit, bound provider validation falls back to the declared contracts and the Layer tree's provider requirements.
 
 ### Composing Bricks
 
@@ -134,7 +148,7 @@ Declare other Bricks in `depends`. The third handler argument supplies callable 
 type ImportRequest = Brick<{
   params: ImportInput
   result: ImportResult
-  errors: ImportValidationFailure
+  error: ImportValidationFailure
   depends: { importer: ImportBrick }
 }>
 

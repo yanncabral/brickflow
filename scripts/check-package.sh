@@ -60,7 +60,7 @@ for file in "${files[@]}"; do
     exit 1
   fi
 done
-for required in 'dist/index.js' 'dist/index.js.map' 'dist/index.d.ts' 'package.json'; do
+for required in 'README.md' 'dist/index.js' 'dist/index.js.map' 'dist/index.d.ts' 'package.json'; do
   if ! contains_exact "$required" "${files[@]}"; then
     echo "Missing $required in tarball" >&2
     exit 1

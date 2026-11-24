@@ -4,7 +4,7 @@ import { type Brick, brick, Layer, LocalWorker, P, UnhandledBrickFailureError } 
 type Read = Brick<{
   params: { missing: boolean }
   result: { id: string }
-  errors: { type: 'missing'; id: string }
+  error: { type: 'missing'; id: string }
 }>
 
 const read = brick<Read>(({ missing }, _requirements, _dependencies, { fail }) =>

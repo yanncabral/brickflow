@@ -1,14 +1,14 @@
 import { type Brick, type BrickRun, brick, P } from '../src/index'
 
 type ChildFailure = { type: 'import_failed' }
-type ImportBrick = Brick<{ params: string; result: number; errors: ChildFailure }>
+type ImportBrick = Brick<{ params: string; result: number; error: ChildFailure }>
 const importer = brick<ImportBrick>((_input, _requires, _depends, { fail }) =>
   fail({ type: 'import_failed' })
 )
 type RequestBrick = Brick<{
   params: string
   result: number
-  errors: { type: 'invalid_file_type' }
+  error: { type: 'invalid_file_type' }
   depends: { importer: ImportBrick }
 }>
 const request = brick<RequestBrick>(async (input, _requires, { importer }) => {
@@ -31,7 +31,7 @@ brick<
   Brick<{
     params: string
     result: number
-    errors: ChildFailure
+    error: ChildFailure
     requires: { operation: Operation }
   }>
 >(async (input, { operation }, _depends, { fail }) => {

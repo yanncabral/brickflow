@@ -20,7 +20,7 @@ import { type Brick, brick, Layer } from 'brickflow'
 type GetUserBrick = Brick<{
   params: { id: string }
   result: User
-  errors: 'user-not-found'
+  error: 'user-not-found'
   requires: { userRepository: UserRepository }
 }>
 
@@ -43,7 +43,7 @@ if (user.ok) {
 }
 ```
 
-Autocomplete covers `params`, `result`, `errors`, `requires`, `depends`, and `signals`. `params` and `result` are required; the other fields are optional and use empty defaults when omitted. Contracts are erased TypeScript types, and multiple `brick<GetUserBrick>(...)` implementations can share the same contract.
+Autocomplete covers `params`, `result`, `error`, `requires`, `depends`, and `signals`. `params` and `result` are required; the other fields are optional and use empty defaults when omitted. Contracts are erased TypeScript types, and multiple `brick<GetUserBrick>(...)` implementations can share the same contract.
 
 Bricks are callable as `getUser(params, options)` or `getUser.run(params, options)`. Both forms return the same kind of run with execution controls and typed handlers. Supply `requirements`, recursive `{ brick, dependencies? }` dependency nodes, and signal handlers through `options`; Layers pre-bind reusable providers and resolve matching dependency aliases.
 
